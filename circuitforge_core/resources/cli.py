@@ -48,7 +48,9 @@ def start(
     monitor = GpuMonitor()
     gpus = monitor.poll()
     if not gpus:
-        typer.echo("Warning: no GPUs detected via nvidia-smi — coordinator running with 0 VRAM")
+        typer.echo(
+            "Warning: no GPUs detected via nvidia-smi — coordinator running with 0 VRAM"
+        )
     else:
         for gpu in gpus:
             lease_manager.register_gpu("local", gpu.gpu_id, gpu.vram_total_mb)
@@ -58,7 +60,11 @@ def start(
         active_profile = profile_registry.load(profile)
         typer.echo(f"Using profile: {active_profile.name} (from {profile})")
     else:
-        active_profile = profile_registry.auto_detect(gpus) if gpus else profile_registry.list_public()[-1]
+        active_profile = (
+            profile_registry.auto_detect(gpus)
+            if gpus
+            else profile_registry.list_public()[-1]
+        )
         typer.echo(f"Auto-selected profile: {active_profile.name}")
 
     coordinator_app = create_coordinator_app(
@@ -90,6 +96,7 @@ def agent(
 def status(coordinator: str = "http://localhost:7700") -> None:
     """Show GPU and lease status from the coordinator."""
     import httpx
+
     try:
         resp = httpx.get(f"{coordinator}/api/nodes", timeout=5.0)
         resp.raise_for_status()
@@ -108,7 +115,9 @@ def status(coordinator: str = "http://localhost:7700") -> None:
 
 @app.command("install-service")
 def install_service(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print unit file without writing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print unit file without writing"
+    ),
 ) -> None:
     """Write a systemd unit file for cf-orch (requires root)."""
     python = sys.executable
@@ -120,9 +129,13 @@ def install_service(
     try:
         _SYSTEMD_UNIT_PATH.write_text(unit_content)
         typer.echo(f"Written: {_SYSTEMD_UNIT_PATH}")
-        typer.echo("Run: sudo systemctl daemon-reload && sudo systemctl enable --now cf-orch")
+        typer.echo(
+            "Run: sudo systemctl daemon-reload && sudo systemctl enable --now cf-orch"
+        )
     except PermissionError:
-        typer.echo(f"Permission denied writing to {_SYSTEMD_UNIT_PATH}. Run as root.", err=True)
+        typer.echo(
+            f"Permission denied writing to {_SYSTEMD_UNIT_PATH}. Run as root.", err=True
+        )
         raise typer.Exit(1)
 
 
