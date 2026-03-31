@@ -30,26 +30,35 @@ def can_use(
     has_byok: bool = False,
     has_local_vision: bool = False,
     _features: dict[str, str] | None = None,
+    _byok_unlockable: frozenset[str] | None = None,
+    _local_vision_unlockable: frozenset[str] | None = None,
 ) -> bool:
     """
     Return True if the given tier (and optional unlocks) can access feature.
 
     Args:
-        feature:          Feature key string.
-        tier:             User's current tier ("free", "paid", "premium", "ultra").
-        has_byok:         True if user has a configured LLM backend.
-        has_local_vision: True if user has a local vision model configured.
-        _features:        Feature→min_tier map. Products pass their own dict here.
-                          If None, all features are free.
+        feature:                Feature key string.
+        tier:                   User's current tier ("free", "paid", "premium", "ultra").
+        has_byok:               True if user has a configured LLM backend.
+        has_local_vision:       True if user has a local vision model configured.
+        _features:              Feature→min_tier map. Products pass their own dict here.
+                                If None, all features are free.
+        _byok_unlockable:       Product-specific BYOK-unlockable features.
+                                If None, uses module-level BYOK_UNLOCKABLE.
+        _local_vision_unlockable: Product-specific local vision unlockable features.
+                                  If None, uses module-level LOCAL_VISION_UNLOCKABLE.
     """
     features = _features or {}
+    byok_unlockable = _byok_unlockable if _byok_unlockable is not None else BYOK_UNLOCKABLE
+    local_vision_unlockable = _local_vision_unlockable if _local_vision_unlockable is not None else LOCAL_VISION_UNLOCKABLE
+
     if feature not in features:
         return True
 
-    if has_byok and feature in BYOK_UNLOCKABLE:
+    if has_byok and feature in byok_unlockable:
         return True
 
-    if has_local_vision and feature in LOCAL_VISION_UNLOCKABLE:
+    if has_local_vision and feature in local_vision_unlockable:
         return True
 
     min_tier = features[feature]
@@ -64,13 +73,18 @@ def tier_label(
     has_byok: bool = False,
     has_local_vision: bool = False,
     _features: dict[str, str] | None = None,
+    _byok_unlockable: frozenset[str] | None = None,
+    _local_vision_unlockable: frozenset[str] | None = None,
 ) -> str:
     """Return a human-readable label for the minimum tier needed for feature."""
     features = _features or {}
+    byok_unlockable = _byok_unlockable if _byok_unlockable is not None else BYOK_UNLOCKABLE
+    local_vision_unlockable = _local_vision_unlockable if _local_vision_unlockable is not None else LOCAL_VISION_UNLOCKABLE
+
     if feature not in features:
         return "free"
-    if has_byok and feature in BYOK_UNLOCKABLE:
+    if has_byok and feature in byok_unlockable:
         return "free (BYOK)"
-    if has_local_vision and feature in LOCAL_VISION_UNLOCKABLE:
+    if has_local_vision and feature in local_vision_unlockable:
         return "free (local vision)"
     return features[feature]
