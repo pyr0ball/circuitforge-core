@@ -44,6 +44,9 @@ class ProfileRegistry:
         return profile
 
     def list_public(self) -> list[GpuProfile]:
+        # CPU profiles (cpu-*) are intentionally excluded — this endpoint
+        # is used to match GPU hardware. CPU inference nodes self-select
+        # their profile via the CLI and are not listed for lease matching.
         return [
             p for p in self._profiles.values()
             if p.name.startswith("single-gpu-")

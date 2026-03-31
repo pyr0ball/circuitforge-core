@@ -31,6 +31,12 @@ class EvictionExecutor:
     ) -> EvictionResult:
         grace = grace_period_s if grace_period_s is not None else self._default_grace
 
+        if pid <= 0:
+            return EvictionResult(
+                success=False, method="error",
+                message=f"Refusing to signal invalid PID {pid}"
+            )
+
         if not psutil.pid_exists(pid):
             return EvictionResult(
                 success=False, method="not_found",

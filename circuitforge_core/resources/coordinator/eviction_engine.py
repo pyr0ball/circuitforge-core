@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import httpx
-
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.models import VRAMLease
 
@@ -61,8 +59,9 @@ class EvictionEngine:
             await self._evict_lease(candidate, agent_url)
 
         # Wait for evictions to free up VRAM (poll with timeout)
-        deadline = asyncio.get_event_loop().time() + self._timeout
-        while asyncio.get_event_loop().time() < deadline:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._timeout
+        while loop.time() < deadline:
             lease = await self.lease_manager.try_grant(
                 node_id, gpu_id, mb, service, priority, ttl_s
             )

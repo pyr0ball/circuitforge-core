@@ -86,7 +86,12 @@ def create_coordinator_app(
     @app.post("/api/leases")
     async def request_lease(req: LeaseRequest) -> dict[str, Any]:
         node_info = agent_supervisor.get_node_info(req.node_id)
-        agent_url = node_info.agent_url if node_info else "http://localhost:7701"
+        if node_info is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown node_id {req.node_id!r} — node not registered",
+            )
+        agent_url = node_info.agent_url
 
         lease = await eviction_engine.request_lease(
             node_id=req.node_id,
