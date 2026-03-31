@@ -13,7 +13,7 @@ class VRAMLease:
     mb_granted: int
     holder_service: str
     priority: int
-    expires_at: float
+    expires_at: float  # unix timestamp; 0.0 = no expiry
 
     @classmethod
     def create(

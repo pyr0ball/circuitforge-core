@@ -1,4 +1,5 @@
 import time
+import pytest
 from circuitforge_core.resources.models import VRAMLease, GpuInfo, NodeInfo
 
 
@@ -27,7 +28,6 @@ def test_vram_lease_create_no_ttl_has_zero_expiry():
 def test_vram_lease_is_immutable():
     lease = VRAMLease.create(gpu_id=0, node_id="heimdall", mb=1024,
                               service="snipe", priority=2)
-    import pytest
     with pytest.raises((AttributeError, TypeError)):
         lease.mb_granted = 999  # type: ignore
 
