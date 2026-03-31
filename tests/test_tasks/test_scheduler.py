@@ -158,7 +158,7 @@ def test_enqueue_returns_false_when_queue_full(tmp_db: Path):
     results = [sched.enqueue(i, "fast_task", 0, None) for i in range(1, 10)]
     gate.set()
     sched.shutdown()
-    assert False in results
+    assert not all(results), "Expected at least one enqueue to be rejected"
 
 
 def test_scheduler_drains_multiple_tasks(tmp_db: Path):
@@ -183,6 +183,8 @@ def test_scheduler_drains_multiple_tasks(tmp_db: Path):
 
 def test_vram_budget_blocks_second_type(tmp_db: Path):
     """Second task type is not started when VRAM would be exceeded."""
+    type_a_started = threading.Event()
+    type_b_started = threading.Event()
     gate_a = threading.Event()
     gate_b = threading.Event()
     started = []
@@ -190,8 +192,10 @@ def test_vram_budget_blocks_second_type(tmp_db: Path):
     def run_fn(db_path, task_id, task_type, job_id, params):
         started.append(task_type)
         if task_type == "type_a":
+            type_a_started.set()
             gate_a.wait()
         else:
+            type_b_started.set()
             gate_b.wait()
 
     two_types = frozenset({"type_a", "type_b"})
@@ -204,14 +208,14 @@ def test_vram_budget_blocks_second_type(tmp_db: Path):
     sched.enqueue(1, "type_a", 0, None)
     sched.enqueue(2, "type_b", 0, None)
 
-    time.sleep(0.2)
-    assert started == ["type_a"]
+    assert type_a_started.wait(timeout=3.0), "type_a never started"
+    assert not type_b_started.is_set(), "type_b should be blocked by VRAM"
 
     gate_a.set()
-    time.sleep(0.2)
+    assert type_b_started.wait(timeout=3.0), "type_b never started after type_a finished"
     gate_b.set()
     sched.shutdown()
-    assert "type_b" in started
+    assert sorted(started) == ["type_a", "type_b"]
 
 
 def test_get_scheduler_singleton(tmp_db: Path):
@@ -264,3 +268,18 @@ def test_load_queued_tasks_missing_table_does_not_crash(tmp_path: Path):
     sched.start()
     sched.shutdown()
     # No exception = pass
+
+
+def test_reserved_vram_zero_after_task_completes(tmp_db: Path):
+    """_reserved_vram returns to 0.0 after a task finishes — no double-decrement."""
+    done = threading.Event()
+
+    def run_fn(db_path, task_id, task_type, job_id, params):
+        done.set()
+
+    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
+    sched.start()
+    sched.enqueue(1, "fast_task", 0, None)
+    assert done.wait(timeout=3.0), "Task never completed"
+    sched.shutdown()
+    assert sched._reserved_vram == 0.0, f"Expected 0.0, got {sched._reserved_vram}"
