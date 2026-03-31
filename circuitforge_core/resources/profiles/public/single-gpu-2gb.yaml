@@ -1,0 +1,22 @@
+schema_version: 1
+name: single-gpu-2gb
+vram_total_mb: 2048
+eviction_timeout_s: 15.0
+services:
+  ollama:
+    max_mb: 1536
+    priority: 1
+  cf-vision:
+    max_mb: 512
+    priority: 2
+    shared: true
+    max_concurrent: 1
+  cf-stt:
+    max_mb: 200
+    priority: 2
+    shared: true
+    max_concurrent: 1
+    backend: moonshine
+model_size_hints:
+  llm_max_params: 3b
+  image_gen_max: none
