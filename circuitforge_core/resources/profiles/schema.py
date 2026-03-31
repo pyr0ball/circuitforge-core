@@ -55,6 +55,8 @@ class GpuProfile(BaseModel):
 
 def load_profile(path: Path) -> GpuProfile:
     raw: dict[str, Any] = yaml.safe_load(path.read_text())
+    if not isinstance(raw, dict):
+        raise ValueError(f"Profile file {path} must be a YAML mapping, got {type(raw).__name__}")
     version = raw.get("schema_version")
     if version != SUPPORTED_SCHEMA_VERSION:
         raise ValueError(

@@ -1,11 +1,8 @@
 # tests/test_resources/test_profile_registry.py
 import pytest
-from pathlib import Path
 from circuitforge_core.resources.profiles.schema import (
     GpuProfile, ServiceProfile, load_profile
 )
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_load_8gb_profile(tmp_path):
