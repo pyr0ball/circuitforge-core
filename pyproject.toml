@@ -19,3 +19,4 @@ include = ["circuitforge_core*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
