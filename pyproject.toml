@@ -22,8 +22,12 @@ orch = [
     "typer[all]>=0.12",
     "psutil>=5.9",
 ]
+tasks = [
+    "httpx>=0.27",
+]
 dev = [
     "circuitforge-core[orch]",
+    "circuitforge-core[tasks]",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
