@@ -23,5 +23,7 @@ def run_migrations(conn: sqlite3.Connection, migrations_dir: Path) -> None:
         if sql_file.name in applied:
             continue
         conn.executescript(sql_file.read_text())
-        conn.execute("INSERT INTO _migrations (name) VALUES (?)", (sql_file.name,))
+        # OR IGNORE: safe if two Store() calls race on the same DB — second writer
+        # just skips the insert rather than raising UNIQUE constraint failed.
+        conn.execute("INSERT OR IGNORE INTO _migrations (name) VALUES (?)", (sql_file.name,))
         conn.commit()
