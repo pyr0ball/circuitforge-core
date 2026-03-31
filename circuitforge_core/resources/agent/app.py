@@ -25,7 +25,7 @@ def create_agent_app(
     _monitor = monitor or GpuMonitor()
     _executor = executor or EvictionExecutor()
 
-    app = FastAPI(title=f"cforch-agent [{node_id}]")
+    app = FastAPI(title=f"cf-orch-agent [{node_id}]")
 
     @app.get("/health")
     def health() -> dict[str, Any]:

@@ -27,7 +27,7 @@ def create_coordinator_app(
 ) -> FastAPI:
     eviction_engine = EvictionEngine(lease_manager=lease_manager)
 
-    app = FastAPI(title="cforch-coordinator")
+    app = FastAPI(title="cf-orch-coordinator")
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
