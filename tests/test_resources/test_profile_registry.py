@@ -51,3 +51,52 @@ def test_service_profile_defaults():
     assert svc.always_on is False
     assert svc.backend is None
     assert svc.consumers == []
+
+
+from unittest.mock import MagicMock
+from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+
+
+def test_profile_registry_loads_public_profiles():
+    registry = ProfileRegistry()
+    profiles = registry.list_public()
+    names = [p.name for p in profiles]
+    assert "single-gpu-8gb" in names
+    assert "single-gpu-6gb" in names
+    assert "single-gpu-2gb" in names
+
+
+def test_profile_registry_auto_detect_selects_8gb():
+    registry = ProfileRegistry()
+    mock_gpus = [
+        MagicMock(vram_total_mb=8192),
+    ]
+    profile = registry.auto_detect(mock_gpus)
+    assert profile.name == "single-gpu-8gb"
+
+
+def test_profile_registry_auto_detect_selects_6gb():
+    registry = ProfileRegistry()
+    mock_gpus = [MagicMock(vram_total_mb=6144)]
+    profile = registry.auto_detect(mock_gpus)
+    assert profile.name == "single-gpu-6gb"
+
+
+def test_profile_registry_auto_detect_selects_2gb():
+    registry = ProfileRegistry()
+    mock_gpus = [MagicMock(vram_total_mb=2048)]
+    profile = registry.auto_detect(mock_gpus)
+    assert profile.name == "single-gpu-2gb"
+
+
+def test_profile_registry_load_from_path(tmp_path):
+    yaml_content = (
+        "schema_version: 1\nname: custom\n"
+        "vram_total_mb: 12288\neviction_timeout_s: 5.0\n"
+    )
+    p = tmp_path / "custom.yaml"
+    p.write_text(yaml_content)
+    registry = ProfileRegistry()
+    profile = registry.load(p)
+    assert profile.name == "custom"
+    assert profile.vram_total_mb == 12288
