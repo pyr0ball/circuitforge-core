@@ -10,7 +10,7 @@ SAMPLE_NVIDIA_SMI_OUTPUT = (
 
 def test_parse_returns_list_of_gpu_info():
     monitor = GpuMonitor()
-    with patch("subprocess.run") as mock_run:
+    with patch("circuitforge_core.resources.agent.gpu_monitor.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = SAMPLE_NVIDIA_SMI_OUTPUT
         gpus = monitor.poll()
@@ -24,7 +24,7 @@ def test_parse_returns_list_of_gpu_info():
 
 def test_parse_second_gpu():
     monitor = GpuMonitor()
-    with patch("subprocess.run") as mock_run:
+    with patch("circuitforge_core.resources.agent.gpu_monitor.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = SAMPLE_NVIDIA_SMI_OUTPUT
         gpus = monitor.poll()
@@ -35,14 +35,14 @@ def test_parse_second_gpu():
 
 def test_poll_returns_empty_list_when_nvidia_smi_unavailable():
     monitor = GpuMonitor()
-    with patch("subprocess.run", side_effect=FileNotFoundError):
+    with patch("circuitforge_core.resources.agent.gpu_monitor.subprocess.run", side_effect=FileNotFoundError):
         gpus = monitor.poll()
     assert gpus == []
 
 
 def test_poll_returns_empty_list_on_nonzero_exit():
     monitor = GpuMonitor()
-    with patch("subprocess.run") as mock_run:
+    with patch("circuitforge_core.resources.agent.gpu_monitor.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 1
         mock_run.return_value.stdout = ""
         gpus = monitor.poll()
@@ -52,7 +52,7 @@ def test_poll_returns_empty_list_on_nonzero_exit():
 def test_poll_skips_malformed_lines():
     monitor = GpuMonitor()
     malformed = "0, RTX 4000, 8192, not_a_number, 1024\n1, RTX 4000, 8192, 512, 7680\n"
-    with patch("subprocess.run") as mock_run:
+    with patch("circuitforge_core.resources.agent.gpu_monitor.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = malformed
         gpus = monitor.poll()
