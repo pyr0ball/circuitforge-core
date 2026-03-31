@@ -65,7 +65,7 @@ class LeaseManager:
             and lease.gpu_id == gpu_id
             and lease.priority > requester_priority
         ]
-        candidates.sort(key=lambda l: l.priority, reverse=True)
+        candidates.sort(key=lambda lease: lease.priority, reverse=True)
         selected: list[VRAMLease] = []
         freed = 0
         for candidate in candidates:

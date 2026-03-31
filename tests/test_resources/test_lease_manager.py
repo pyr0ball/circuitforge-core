@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 
@@ -77,9 +76,10 @@ def test_register_gpu_sets_total(mgr):
     assert mgr.gpu_total_mb("heimdall", 0) == 8192
 
 
-def test_used_mb_tracks_grants():
+@pytest.mark.asyncio
+async def test_used_mb_tracks_grants():
     mgr = LeaseManager()
     mgr.register_gpu("heimdall", 0, 8192)
-    asyncio.run(mgr.try_grant("heimdall", 0, 3000, "a", 1))
-    asyncio.run(mgr.try_grant("heimdall", 0, 2000, "b", 2))
+    await mgr.try_grant("heimdall", 0, 3000, "a", 1)
+    await mgr.try_grant("heimdall", 0, 2000, "b", 2)
     assert mgr.used_mb("heimdall", 0) == 5000
