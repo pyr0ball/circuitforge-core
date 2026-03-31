@@ -5,6 +5,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
+from types import ModuleType
 from typing import List
 from unittest.mock import MagicMock, patch
 
@@ -86,6 +87,28 @@ def test_detect_vram_cforch_empty_nodes_falls_back():
         mock_httpx.get.return_value = mock_resp
         result = detect_available_vram_gb()
     assert result == 999.0
+
+
+def test_detect_vram_preflight_fallback():
+    """Falls back to preflight total VRAM when cf-orch is unreachable."""
+    # Build a fake scripts.preflight module with get_gpus returning two GPUs.
+    fake_scripts = ModuleType("scripts")
+    fake_preflight = ModuleType("scripts.preflight")
+    fake_preflight.get_gpus = lambda: [  # type: ignore[attr-defined]
+        {"vram_total_gb": 8.0},
+        {"vram_total_gb": 4.0},
+    ]
+    fake_scripts.preflight = fake_preflight  # type: ignore[attr-defined]
+
+    with patch("circuitforge_core.tasks.scheduler.httpx") as mock_httpx, \
+         patch.dict(
+             __import__("sys").modules,
+             {"scripts": fake_scripts, "scripts.preflight": fake_preflight},
+         ):
+        mock_httpx.get.side_effect = ConnectionRefusedError()
+        result = detect_available_vram_gb()
+
+    assert result == pytest.approx(12.0)  # 8.0 + 4.0 GB
 
 
 # ── TaskScheduler basic behaviour ─────────────────────────────────────────────
