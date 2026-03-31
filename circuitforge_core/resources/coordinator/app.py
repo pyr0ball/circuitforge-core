@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
+from circuitforge_core.resources.coordinator.eviction_engine import EvictionEngine
+from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
+from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+
+
+class LeaseRequest(BaseModel):
+    node_id: str
+    gpu_id: int
+    mb: int
+    service: str
+    priority: int = 2
+    ttl_s: float = 0.0
+
+
+def create_coordinator_app(
+    lease_manager: LeaseManager,
+    profile_registry: ProfileRegistry,
+    agent_supervisor: AgentSupervisor,
+) -> FastAPI:
+    eviction_engine = EvictionEngine(lease_manager=lease_manager)
+
+    app = FastAPI(title="cf-orch-coordinator")
+
+    @app.get("/api/health")
+    def health() -> dict[str, Any]:
+        return {"status": "ok"}
+
+    @app.get("/api/nodes")
+    def get_nodes() -> dict[str, Any]:
+        nodes = agent_supervisor.all_nodes()
+        return {
+            "nodes": [
+                {
+                    "node_id": n.node_id,
+                    "agent_url": n.agent_url,
+                    "last_heartbeat": n.last_heartbeat,
+                    "gpus": [
+                        {
+                            "gpu_id": g.gpu_id,
+                            "name": g.name,
+                            "vram_total_mb": g.vram_total_mb,
+                            "vram_used_mb": g.vram_used_mb,
+                            "vram_free_mb": g.vram_free_mb,
+                        }
+                        for g in n.gpus
+                    ],
+                }
+                for n in nodes
+            ]
+        }
+
+    @app.get("/api/profiles")
+    def get_profiles() -> dict[str, Any]:
+        return {
+            "profiles": [
+                {"name": p.name, "vram_total_mb": p.vram_total_mb}
+                for p in profile_registry.list_public()
+            ]
+        }
+
+    @app.get("/api/leases")
+    def get_leases() -> dict[str, Any]:
+        return {
+            "leases": [
+                {
+                    "lease_id": lease.lease_id,
+                    "node_id": lease.node_id,
+                    "gpu_id": lease.gpu_id,
+                    "mb_granted": lease.mb_granted,
+                    "holder_service": lease.holder_service,
+                    "priority": lease.priority,
+                    "expires_at": lease.expires_at,
+                }
+                for lease in lease_manager.all_leases()
+            ]
+        }
+
+    @app.post("/api/leases")
+    async def request_lease(req: LeaseRequest) -> dict[str, Any]:
+        node_info = agent_supervisor.get_node_info(req.node_id)
+        if node_info is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown node_id {req.node_id!r} — node not registered",
+            )
+        agent_url = node_info.agent_url
+
+        lease = await eviction_engine.request_lease(
+            node_id=req.node_id,
+            gpu_id=req.gpu_id,
+            mb=req.mb,
+            service=req.service,
+            priority=req.priority,
+            agent_url=agent_url,
+            ttl_s=req.ttl_s,
+        )
+        if lease is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Insufficient VRAM — no eviction candidates available",
+            )
+        return {
+            "lease": {
+                "lease_id": lease.lease_id,
+                "node_id": lease.node_id,
+                "gpu_id": lease.gpu_id,
+                "mb_granted": lease.mb_granted,
+                "holder_service": lease.holder_service,
+                "priority": lease.priority,
+                "expires_at": lease.expires_at,
+            }
+        }
+
+    @app.delete("/api/leases/{lease_id}")
+    async def release_lease(lease_id: str) -> dict[str, Any]:
+        released = await lease_manager.release(lease_id)
+        if not released:
+            raise HTTPException(status_code=404, detail=f"Lease {lease_id!r} not found")
+        return {"released": True, "lease_id": lease_id}
+
+    return app

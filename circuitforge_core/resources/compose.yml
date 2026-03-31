@@ -1,0 +1,44 @@
+# circuitforge_core/resources/compose.yml
+# One-command cf-orch deployment for Docker self-hosters:
+#   docker compose -f path/to/compose.yml up cf-orch-coordinator
+
+services:
+  cf-orch-coordinator:
+    image: python:3.12-slim
+    command: >
+      sh -c "pip install 'circuitforge-core[orch]' &&
+             cf-orch start --host 0.0.0.0 --port 7700"
+    ports:
+      - "7700:7700"
+    volumes:
+      - /run/docker.sock:/var/run/docker.sock:ro
+      - cf-orch-data:/data
+    environment:
+      - CFORCH_PROFILE=${CFORCH_PROFILE:-}
+    restart: unless-stopped
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+    runtime: nvidia
+
+  cf-orch-agent:
+    image: python:3.12-slim
+    command: >
+      sh -c "pip install 'circuitforge-core[orch]' &&
+             cf-orch agent --coordinator http://cf-orch-coordinator:7700
+                           --node-id ${CFORCH_NODE_ID:-local}
+                           --host 0.0.0.0 --port 7701"
+    ports:
+      - "7701:7701"
+    depends_on:
+      - cf-orch-coordinator
+    environment:
+      - CFORCH_NODE_ID=${CFORCH_NODE_ID:-local}
+    restart: unless-stopped
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+    runtime: nvidia
+
+volumes:
+  cf-orch-data:

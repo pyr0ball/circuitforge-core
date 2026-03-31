@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuitforge-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared scaffold for CircuitForge products"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,9 +13,29 @@ dependencies = [
     "openai>=1.0",
 ]
 
+[project.optional-dependencies]
+orch = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+    "typer[all]>=0.12",
+    "psutil>=5.9",
+]
+dev = [
+    "circuitforge-core[orch]",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+cf-orch = "circuitforge_core.resources.cli:app"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["circuitforge_core*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
