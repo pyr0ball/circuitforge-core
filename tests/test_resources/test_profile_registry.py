@@ -1,8 +1,11 @@
 # tests/test_resources/test_profile_registry.py
 import pytest
+from unittest.mock import MagicMock
+
 from circuitforge_core.resources.profiles.schema import (
     GpuProfile, ServiceProfile, load_profile
 )
+from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 
 
 def test_load_8gb_profile(tmp_path):
@@ -51,10 +54,6 @@ def test_service_profile_defaults():
     assert svc.always_on is False
     assert svc.backend is None
     assert svc.consumers == []
-
-
-from unittest.mock import MagicMock
-from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 
 
 def test_profile_registry_loads_public_profiles():
