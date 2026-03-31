@@ -1,0 +1,45 @@
+schema_version: 1
+name: single-gpu-24gb
+vram_total_mb: 24576
+eviction_timeout_s: 10.0
+services:
+  vllm:
+    max_mb: 20480
+    priority: 1
+  ollama:
+    max_mb: 18432
+    priority: 1
+  cf-vision:
+    max_mb: 4096
+    priority: 2
+    shared: true
+    max_concurrent: 6
+  cf-stt:
+    max_mb: 1200
+    priority: 2
+    shared: true
+    max_concurrent: 4
+    backend: parakeet-tdt
+  cf-tts:
+    max_mb: 1024
+    priority: 2
+    shared: true
+    max_concurrent: 4
+  cf-embed:
+    max_mb: 512
+    priority: 2
+    shared: true
+    max_concurrent: 8
+    always_on: true
+  cf-classify:
+    max_mb: 512
+    priority: 2
+    shared: true
+    max_concurrent: 8
+    always_on: true
+  comfyui:
+    max_mb: 20480
+    priority: 4
+model_size_hints:
+  llm_max_params: 70b
+  image_gen_max: flux-dev-fp16

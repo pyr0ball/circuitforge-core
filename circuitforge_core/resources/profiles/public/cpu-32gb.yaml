@@ -1,0 +1,33 @@
+schema_version: 1
+name: cpu-32gb
+eviction_timeout_s: 30.0
+services:
+  ollama:
+    max_mb: 0
+    priority: 1
+  cf-stt:
+    max_mb: 0
+    priority: 2
+    shared: true
+    max_concurrent: 2
+    backend: faster-whisper
+  cf-tts:
+    max_mb: 0
+    priority: 2
+    shared: true
+    max_concurrent: 2
+  cf-embed:
+    max_mb: 0
+    priority: 2
+    shared: true
+    max_concurrent: 4
+    always_on: true
+  cf-classify:
+    max_mb: 0
+    priority: 2
+    shared: true
+    max_concurrent: 4
+    always_on: true
+model_size_hints:
+  llm_max_params: 7b-q4
+  image_gen_max: none
