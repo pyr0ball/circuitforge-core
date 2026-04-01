@@ -32,9 +32,14 @@ def start(
     profile: Annotated[Optional[Path], typer.Option(help="Profile YAML path")] = None,
     host: str = "0.0.0.0",
     port: int = 7700,
+    node_id: str = "local",
     agent_port: int = 7701,
 ) -> None:
-    """Start the cf-orch coordinator (auto-detects GPU profile if not specified)."""
+    """Start the cf-orch coordinator (auto-detects GPU profile if not specified).
+
+    Automatically pre-registers the local agent so its GPUs appear on the
+    dashboard immediately. Remote nodes self-register via POST /api/nodes.
+    """
     from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
     from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
     from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
@@ -52,8 +57,6 @@ def start(
             "Warning: no GPUs detected via nvidia-smi — coordinator running with 0 VRAM"
         )
     else:
-        for gpu in gpus:
-            lease_manager.register_gpu("local", gpu.gpu_id, gpu.vram_total_mb)
         typer.echo(f"Detected {len(gpus)} GPU(s)")
 
     if profile:
@@ -66,6 +69,11 @@ def start(
             else profile_registry.list_public()[-1]
         )
         typer.echo(f"Auto-selected profile: {active_profile.name}")
+
+    # Pre-register the local agent — the heartbeat loop will poll it for live GPU data.
+    local_agent_url = f"http://127.0.0.1:{agent_port}"
+    supervisor.register(node_id, local_agent_url)
+    typer.echo(f"Registered local node '{node_id}' → {local_agent_url}")
 
     coordinator_app = create_coordinator_app(
         lease_manager=lease_manager,
@@ -83,9 +91,46 @@ def agent(
     node_id: str = "local",
     host: str = "0.0.0.0",
     port: int = 7701,
+    advertise_host: Optional[str] = None,
 ) -> None:
-    """Start a cf-orch node agent (for remote nodes like Navi, Huginn)."""
+    """Start a cf-orch node agent and self-register with the coordinator.
+
+    The agent starts its HTTP server, then POSTs its URL to the coordinator
+    so it appears on the dashboard without manual configuration.
+
+    Use --advertise-host to override the IP the coordinator should use to
+    reach this agent (e.g. on a multi-homed or NATted host).
+    """
+    import asyncio
+    import threading
+    import httpx
     from circuitforge_core.resources.agent.app import create_agent_app
+
+    # The URL the coordinator should use to reach this agent.
+    reach_host = advertise_host or ("127.0.0.1" if host in ("0.0.0.0", "::") else host)
+    agent_url = f"http://{reach_host}:{port}"
+
+    def _register_in_background() -> None:
+        """POST registration to coordinator after a short delay (uvicorn needs ~1s to bind)."""
+        import time
+        time.sleep(2.0)
+        try:
+            resp = httpx.post(
+                f"{coordinator}/api/nodes",
+                json={"node_id": node_id, "agent_url": agent_url},
+                timeout=5.0,
+            )
+            if resp.is_success:
+                typer.echo(f"Registered with coordinator at {coordinator} as '{node_id}'")
+            else:
+                typer.echo(
+                    f"Warning: coordinator registration returned {resp.status_code}", err=True
+                )
+        except Exception as exc:
+            typer.echo(f"Warning: could not reach coordinator at {coordinator}: {exc}", err=True)
+
+    # Fire registration in a daemon thread so uvicorn.run() can start blocking immediately.
+    threading.Thread(target=_register_in_background, daemon=True).start()
 
     agent_app = create_agent_app(node_id=node_id)
     typer.echo(f"Starting cf-orch agent [{node_id}] on {host}:{port}")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -7,12 +8,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-_DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
-
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.eviction_engine import EvictionEngine
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+
+_DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
 
 
 class LeaseRequest(BaseModel):
@@ -24,6 +25,11 @@ class LeaseRequest(BaseModel):
     ttl_s: float = 0.0
 
 
+class NodeRegisterRequest(BaseModel):
+    node_id: str
+    agent_url: str  # e.g. "http://10.1.10.71:7701"
+
+
 def create_coordinator_app(
     lease_manager: LeaseManager,
     profile_registry: ProfileRegistry,
@@ -31,7 +37,15 @@ def create_coordinator_app(
 ) -> FastAPI:
     eviction_engine = EvictionEngine(lease_manager=lease_manager)
 
-    app = FastAPI(title="cf-orch-coordinator")
+    @asynccontextmanager
+    async def _lifespan(app: FastAPI):  # type: ignore[type-arg]
+        import asyncio
+        task = asyncio.create_task(agent_supervisor.run_heartbeat_loop())
+        yield
+        agent_supervisor.stop()
+        task.cancel()
+
+    app = FastAPI(title="cf-orch-coordinator", lifespan=_lifespan)
 
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def dashboard() -> HTMLResponse:
@@ -64,6 +78,13 @@ def create_coordinator_app(
                 for n in nodes
             ]
         }
+
+    @app.post("/api/nodes")
+    async def register_node(req: NodeRegisterRequest) -> dict[str, Any]:
+        """Agents call this to self-register. Coordinator immediately polls for GPU info."""
+        agent_supervisor.register(req.node_id, req.agent_url)
+        await agent_supervisor.poll_agent(req.node_id)
+        return {"registered": True, "node_id": req.node_id}
 
     @app.get("/api/profiles")
     def get_profiles() -> dict[str, Any]:
