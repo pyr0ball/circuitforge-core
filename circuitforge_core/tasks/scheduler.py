@@ -203,11 +203,21 @@ class TaskScheduler:
                 self._wake.set()
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Signal the scheduler to stop and wait for it to exit."""
+        """Signal the scheduler to stop and wait for it to exit.
+
+        Joins both the scheduler loop thread and any active batch worker
+        threads so callers can rely on clean state (e.g. _reserved_vram == 0)
+        immediately after this returns.
+        """
         self._stop.set()
         self._wake.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
+        # Join active batch workers so _reserved_vram is settled on return
+        with self._lock:
+            workers = list(self._active.values())
+        for worker in workers:
+            worker.join(timeout=timeout)
 
     def _scheduler_loop(self) -> None:
         while not self._stop.is_set():
