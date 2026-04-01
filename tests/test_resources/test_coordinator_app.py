@@ -100,3 +100,15 @@ def test_get_leases_returns_active_leases(coordinator_client):
     resp = client.get("/api/leases")
     assert resp.status_code == 200
     assert len(resp.json()["leases"]) == 1
+
+
+def test_dashboard_serves_html(coordinator_client):
+    """GET / returns the dashboard HTML page."""
+    client, _ = coordinator_client
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    # Verify key structural markers are present (without asserting exact markup)
+    assert "cf-orch" in resp.text
+    assert "/api/nodes" in resp.text
+    assert "/api/leases" in resp.text

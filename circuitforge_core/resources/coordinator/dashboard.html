@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cf-orch · dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:         #0d1117;
+    --bg2:        #161b22;
+    --bg3:        #1c2129;
+    --border:     #30363d;
+    --border-dim: #21262d;
+    --text:       #e6edf3;
+    --muted:      #8b949e;
+    --dim:        #4d5763;
+    --indigo:     #818cf8;
+    --cyan:       #22d3ee;
+    --green:      #4ade80;
+    --amber:      #fbbf24;
+    --red:        #f85149;
+    --orange:     #fb923c;
+    --radius:     6px;
+    --radius-sm:  3px;
+    --font:       'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.5; padding: 1rem; }
+
+  /* header */
+  header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .logo  { color: var(--indigo); font-size: 1.1em; font-weight: 700; }
+  #refresh-badge { margin-left: auto; font-size: 0.75em; color: var(--dim); }
+  #refresh-badge span { color: var(--green); }
+
+  /* section labels */
+  .section-label { font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--dim); margin-bottom: 0.5rem; }
+
+  /* health strip */
+  #health-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; padding: 0.6rem 0.75rem; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); min-height: 36px; }
+  .pill { display: inline-flex; align-items: center; gap: 0.3rem; padding: 2px 10px; border-radius: 99px; font-size: 0.8em; font-weight: 600; }
+  .pill.ok  { background: rgba(74,222,128,.12); color: var(--green); }
+  .pill.err { background: rgba(248,81,73,.12);  color: var(--red); }
+  .pill.off { background: rgba(139,148,158,.1); color: var(--dim); }
+
+  /* GPU grid */
+  #gpu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+  .gpu-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.7rem 0.8rem; }
+  .gpu-card.offline { border-color: #7c2d12; opacity: 0.7; }
+  .gpu-node  { font-size: 0.75em; font-weight: 700; color: var(--indigo); margin-bottom: 1px; }
+  .gpu-offline .gpu-node { color: var(--orange); }
+  .gpu-name  { font-size: 0.78em; color: var(--text); margin-bottom: 0.4rem; }
+  .vram-track { background: var(--bg); border-radius: var(--radius-sm); height: 6px; margin-bottom: 0.3rem; }
+  .vram-fill  { height: 100%; border-radius: var(--radius-sm); transition: width 0.4s; }
+  .vram-label { font-size: 0.72em; color: var(--muted); margin-bottom: 0.25rem; }
+  .gpu-status { font-size: 0.72em; }
+  .gpu-status.idle { color: var(--green); }
+  .gpu-status.busy { color: var(--amber); }
+  .gpu-status.full { color: var(--red); }
+  .gpu-status.offline { color: var(--orange); }
+  .spark-track { height: 24px; background: var(--bg); border-radius: var(--radius-sm); margin-top: 0.4rem; overflow: hidden; }
+
+  /* leases */
+  #leases-table { width: 100%; border-collapse: collapse; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
+  #leases-table th { background: var(--bg3); color: var(--dim); font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+  #leases-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-dim); font-size: 0.8em; vertical-align: middle; }
+  #leases-table tr:last-child td { border-bottom: none; }
+  .td-service  { color: var(--indigo); font-weight: 600; }
+  .td-node     { color: var(--muted); }
+  .td-mb       { color: var(--text); }
+  .td-priority { color: var(--amber); }
+  .td-none     { color: var(--dim); font-style: italic; }
+  .ttl-wrap    { display: flex; align-items: center; gap: 0.5rem; }
+  .ttl-label   { color: var(--cyan); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .ttl-track   { flex: 1; background: var(--bg); border-radius: var(--radius-sm); height: 4px; }
+  .ttl-fill    { height: 100%; border-radius: var(--radius-sm); background: var(--cyan); transition: width 0.4s; }
+
+  /* error */
+  #error-banner { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: var(--radius); color: var(--red); padding: 0.5rem 0.75rem; font-size: 0.82em; margin-bottom: 1rem; }
+
+  /* footer */
+  footer { border-top: 1px solid var(--border); padding-top: 0.5rem; color: var(--dim); font-size: 0.72em; display: flex; gap: 1.5rem; }
+  footer a { color: var(--indigo); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">cf-orch</span>
+  <span id="cluster-label" style="color:var(--muted)">coordinator</span>
+  <div id="refresh-badge">auto-refresh <span id="countdown">5</span>s</div>
+</header>
+
+<div id="error-banner"></div>
+
+<div class="section-label">Services</div>
+<div id="health-strip"></div>
+
+<div class="section-label">GPU Nodes</div>
+<div id="gpu-grid"></div>
+
+<div class="section-label">Active Leases</div>
+<table id="leases-table">
+  <thead>
+    <tr>
+      <th>Service</th><th>Node / GPU</th><th>VRAM</th><th>Priority</th><th>TTL / Expires</th>
+    </tr>
+  </thead>
+  <tbody id="leases-body"></tbody>
+</table>
+
+<footer>
+  <span>cf-orch · circuitforge-core</span>
+  <a href="/api/nodes" target="_blank">/api/nodes</a>
+  <a href="/api/leases" target="_blank">/api/leases</a>
+  <a href="/api/health" target="_blank">/api/health</a>
+</footer>
+
+<script>
+"use strict";
+
+// ── helpers ──────────────────────────────────────────────────────
+
+/** Create an element with optional className and textContent. */
+function el(tag, opts) {
+  const e = document.createElement(tag);
+  if (opts && opts.cls)  { opts.cls.split(' ').forEach(c => c && e.classList.add(c)); }
+  if (opts && opts.text != null) e.textContent = opts.text;
+  if (opts && opts.style) Object.assign(e.style, opts.style);
+  if (opts && opts.attr)  Object.entries(opts.attr).forEach(([k,v]) => e.setAttribute(k, v));
+  return e;
+}
+
+/** Append children to a parent element. Returns parent. */
+function append(parent, ...children) {
+  children.forEach(c => c && parent.appendChild(c));
+  return parent;
+}
+
+/** Replace all children of a DOM node. */
+function setChildren(parent, ...children) {
+  while (parent.firstChild) parent.removeChild(parent.firstChild);
+  append(parent, ...children);
+}
+
+/** Build a sparkline SVG element (no innerHTML). */
+function buildSparkline(history, totalMb) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('viewBox', '0 0 100 16');
+
+  if (!history || history.length < 2) {
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', '0'); line.setAttribute('y1', '14');
+    line.setAttribute('x2', '100'); line.setAttribute('y2', '14');
+    line.setAttribute('stroke', '#30363d'); line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
+    return svg;
+  }
+
+  const max = Math.max(totalMb, 1);
+  const pts = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * 100;
+    const y = 14 - ((v / max) * 12);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+
+  const poly = document.createElementNS(ns, 'polyline');
+  poly.setAttribute('points', pts);
+  poly.setAttribute('fill', 'none');
+  poly.setAttribute('stroke', '#818cf8');
+  poly.setAttribute('stroke-width', '1.5');
+  poly.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(poly);
+  return svg;
+}
+
+/** VRAM fill colour based on utilisation fraction. */
+function vramColor(pct) {
+  if (pct >= 0.9) return '#f85149';
+  if (pct >= 0.7) return '#fbbf24';
+  return '#22d3ee';
+}
+
+// ── sparkline history ────────────────────────────────────────────
+// keyed "nodeId:gpuId" → array of vram_used_mb, max 20 samples
+const sparkHistory = {};
+
+// ── countdown ────────────────────────────────────────────────────
+let countdown = 5;
+setInterval(() => {
+  countdown = countdown <= 1 ? 5 : countdown - 1;
+  document.getElementById('countdown').textContent = countdown;
+}, 1000);
+
+// ── render: health strip ─────────────────────────────────────────
+function renderHealth(ok) {
+  const strip = document.getElementById('health-strip');
+  const pill = el('span', { cls: 'pill ' + (ok ? 'ok' : 'err'), text: (ok ? '● ' : '✕ ') + 'coordinator' });
+  setChildren(strip, pill);
+}
+
+// ── render: GPU grid ─────────────────────────────────────────────
+function renderNodes(nodes) {
+  const grid = document.getElementById('gpu-grid');
+  if (!nodes || nodes.length === 0) {
+    setChildren(grid, el('div', { text: 'No nodes registered.', style: { color: 'var(--dim)', fontSize: '0.8em', padding: '0.5rem' } }));
+    return;
+  }
+
+  const cards = [];
+  for (const node of nodes) {
+    for (const gpu of node.gpus) {
+      const key = node.node_id + ':' + gpu.gpu_id;
+      const pct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb : 0;
+      const usedGb  = (gpu.vram_used_mb / 1024).toFixed(1);
+      const totalGb = (gpu.vram_total_mb / 1024).toFixed(1);
+      const color   = vramColor(pct);
+
+      if (!sparkHistory[key]) sparkHistory[key] = [];
+      sparkHistory[key].push(gpu.vram_used_mb);
+      if (sparkHistory[key].length > 20) sparkHistory[key].shift();
+
+      const statusCls  = pct >= 0.9 ? 'full' : pct >= 0.1 ? 'busy' : 'idle';
+      const statusText = pct >= 0.9 ? 'saturated' : pct >= 0.1 ? Math.round(pct * 100) + '% used' : 'idle';
+
+      const card = el('div', { cls: 'gpu-card' });
+
+      const nodeLabel = el('div', { cls: 'gpu-node', text: node.node_id.toUpperCase() + ' · GPU ' + gpu.gpu_id });
+      const nameLine  = el('div', { cls: 'gpu-name', text: gpu.name || 'Unknown GPU' });
+
+      const track = el('div', { cls: 'vram-track' });
+      const fill  = el('div', { cls: 'vram-fill', style: { width: (pct * 100).toFixed(1) + '%', background: color } });
+      track.appendChild(fill);
+
+      const vramLbl  = el('div', { cls: 'vram-label', text: usedGb + ' / ' + totalGb + ' GB' });
+      const statusEl = el('div', { cls: 'gpu-status ' + statusCls, text: statusText });
+
+      const sparkTrack = el('div', { cls: 'spark-track' });
+      sparkTrack.appendChild(buildSparkline(sparkHistory[key], gpu.vram_total_mb));
+
+      append(card, nodeLabel, nameLine, track, vramLbl, statusEl, sparkTrack);
+      cards.push(card);
+    }
+  }
+
+  setChildren(grid, ...cards);
+}
+
+// ── render: leases table ─────────────────────────────────────────
+function renderLeases(leases) {
+  const tbody = document.getElementById('leases-body');
+  if (!leases || leases.length === 0) {
+    const tr = document.createElement('tr');
+    const td = el('td', { cls: 'td-none', text: 'No active leases.' });
+    td.setAttribute('colspan', '5');
+    tr.appendChild(td);
+    setChildren(tbody, tr);
+    return;
+  }
+
+  const now = Date.now() / 1000;
+  const rows = leases.map(lease => {
+    const mbGb = lease.mb_granted >= 1024
+      ? (lease.mb_granted / 1024).toFixed(1) + ' GB'
+      : lease.mb_granted + ' MB';
+
+    const tr = document.createElement('tr');
+
+    const tdService  = el('td', { cls: 'td-service',  text: lease.holder_service });
+    const tdNode     = el('td', { cls: 'td-node',     text: lease.node_id + ' / GPU ' + lease.gpu_id });
+    const tdMb       = el('td', { cls: 'td-mb',       text: mbGb });
+    const tdPriority = el('td', { cls: 'td-priority', text: 'p' + lease.priority });
+
+    const tdTtl = document.createElement('td');
+    if (!lease.expires_at) {
+      tdTtl.appendChild(el('span', { cls: 'ttl-label', text: '∞' }));
+    } else {
+      const remaining = Math.max(0, lease.expires_at - now);
+      const pct   = Math.min(100, (remaining / 300) * 100);
+      const mins  = Math.floor(remaining / 60);
+      const secs  = Math.floor(remaining % 60);
+      const label = remaining > 60
+        ? mins + 'm ' + String(secs).padStart(2, '0') + 's'
+        : Math.floor(remaining) + 's';
+
+      const wrap  = el('div', { cls: 'ttl-wrap' });
+      const lbl   = el('span', { cls: 'ttl-label', text: label });
+      const track = el('div', { cls: 'ttl-track' });
+      const fill  = el('div', { cls: 'ttl-fill', style: { width: pct.toFixed(1) + '%' } });
+      track.appendChild(fill);
+      append(wrap, lbl, track);
+      tdTtl.appendChild(wrap);
+    }
+
+    append(tr, tdService, tdNode, tdMb, tdPriority, tdTtl);
+    return tr;
+  });
+
+  setChildren(tbody, ...rows);
+}
+
+// ── error banner ─────────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;   // textContent — safe
+  el.style.display = 'block';
+}
+function clearError() { document.getElementById('error-banner').style.display = 'none'; }
+
+// ── poll ─────────────────────────────────────────────────────────
+async function poll() {
+  try {
+    const [nodesRes, leasesRes, healthRes] = await Promise.all([
+      fetch('/api/nodes'),
+      fetch('/api/leases'),
+      fetch('/api/health'),
+    ]);
+    if (!nodesRes.ok || !leasesRes.ok) throw new Error('API error: ' + nodesRes.status);
+    const [nodesData, leasesData] = await Promise.all([nodesRes.json(), leasesRes.json()]);
+    clearError();
+    renderHealth(healthRes.ok);
+    renderNodes(nodesData.nodes   || []);
+    renderLeases(leasesData.leases || []);
+  } catch (err) {
+    showError('Failed to reach coordinator: ' + err.message);
+    renderHealth(false);
+  }
+}
+
+poll();
+setInterval(poll, 5000);
+</script>
+</body>
+</html>

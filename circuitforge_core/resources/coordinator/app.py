@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+_DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
 
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.eviction_engine import EvictionEngine
@@ -28,6 +32,10 @@ def create_coordinator_app(
     eviction_engine = EvictionEngine(lease_manager=lease_manager)
 
     app = FastAPI(title="cf-orch-coordinator")
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def dashboard() -> HTMLResponse:
+        return HTMLResponse(content=_DASHBOARD_HTML)
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
