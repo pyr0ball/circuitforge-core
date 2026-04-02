@@ -146,3 +146,38 @@ def test_single_gpu_8gb_profile_has_idle_stop_after_s():
     assert vllm_svc is not None
     assert hasattr(vllm_svc, "idle_stop_after_s")
     assert vllm_svc.idle_stop_after_s == 600
+
+
+def test_ensure_service_returns_503_when_vram_too_low():
+    """VRAM pre-flight guard fires before any HTTP request when free VRAM < max_mb // 2."""
+    # vllm max_mb = 5120 → threshold = 2560 MB; 100 MB free triggers 503.
+    lease_manager = LeaseManager()
+    lease_manager.register_gpu("low-vram-node", 0, 512)
+    profile_registry = ProfileRegistry()
+    supervisor = MagicMock()
+    supervisor.get_node_info.return_value = NodeInfo(
+        node_id="low-vram-node",
+        agent_url="http://localhost:7701",
+        gpus=[GpuInfo(gpu_id=0, name="GTX 1050",
+                      vram_total_mb=512, vram_used_mb=412, vram_free_mb=100)],
+        last_heartbeat=0.0,
+    )
+    supervisor.all_nodes.return_value = []
+    app = create_coordinator_app(
+        lease_manager=lease_manager,
+        profile_registry=profile_registry,
+        agent_supervisor=supervisor,
+        service_registry=ServiceRegistry(),
+    )
+    client = TestClient(app)
+
+    resp = client.post("/api/services/vllm/ensure", json={
+        "node_id": "low-vram-node",
+        "gpu_id": 0,
+        "params": {"model": "some-model"},
+    })
+
+    assert resp.status_code == 503
+    assert "Insufficient VRAM" in resp.json()["detail"]
+    # Guard must fire before any agent HTTP call is attempted.
+    supervisor.get_node_info.assert_called_once_with("low-vram-node")
