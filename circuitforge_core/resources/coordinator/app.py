@@ -316,14 +316,25 @@ def create_coordinator_app(
                     )
                     if resp.is_success:
                         data = resp.json()
+                        svc_url = data.get("url", "")
                         alloc = service_registry.allocate(
                             service=service,
                             node_id=node_id,
                             gpu_id=gpu_id,
                             model=model,
                             caller=req.caller,
-                            url=data.get("url", ""),
+                            url=svc_url,
                             ttl_s=req.ttl_s,
+                        )
+                        # Seed the instance state for first-time starts
+                        instance_state = "running" if warm else "starting"
+                        service_registry.upsert_instance(
+                            service=service,
+                            node_id=node_id,
+                            gpu_id=gpu_id,
+                            state=instance_state,
+                            model=model,
+                            url=svc_url,
                         )
                         return {
                             "allocation_id": alloc.allocation_id,
