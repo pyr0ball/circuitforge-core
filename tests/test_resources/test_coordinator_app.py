@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from circuitforge_core.resources.coordinator.app import create_coordinator_app
+from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo
@@ -112,3 +113,22 @@ def test_dashboard_serves_html(coordinator_client):
     assert "cf-orch" in resp.text
     assert "/api/nodes" in resp.text
     assert "/api/leases" in resp.text
+
+
+def test_online_agents_excludes_offline():
+    lm = LeaseManager()
+    sup = AgentSupervisor(lm)
+    sup.register("online_node", "http://a:7701")
+    sup.register("offline_node", "http://b:7701")
+    sup._agents["online_node"].online = True
+    sup._agents["offline_node"].online = False
+    result = sup.online_agents()
+    assert "online_node" in result
+    assert "offline_node" not in result
+
+
+def test_resident_keys_returns_set_of_node_service():
+    lm = LeaseManager()
+    lm.set_residents_for_node("heimdall", [("vllm", "Ouro-1.4B"), ("ollama", None)])
+    keys = lm.resident_keys()
+    assert keys == {"heimdall:vllm", "heimdall:ollama"}

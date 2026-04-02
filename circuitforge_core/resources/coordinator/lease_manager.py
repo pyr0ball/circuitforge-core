@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 
-from circuitforge_core.resources.models import VRAMLease
+from circuitforge_core.resources.models import ResidentAllocation, VRAMLease
 
 
 class LeaseManager:
@@ -12,6 +12,9 @@ class LeaseManager:
         self._gpu_total: dict[tuple[str, int], int] = {}
         self._gpu_used: dict[tuple[str, int], int] = defaultdict(int)
         self._lock = asyncio.Lock()
+        # Resident allocations — keyed "node_id:service", updated by heartbeat.
+        # No lock needed: only the single heartbeat task writes this dict.
+        self._residents: dict[str, ResidentAllocation] = {}
 
     def register_gpu(self, node_id: str, gpu_id: int, total_mb: int) -> None:
         self._gpu_total[(node_id, gpu_id)] = total_mb
@@ -86,3 +89,42 @@ class LeaseManager:
 
     def all_leases(self) -> list[VRAMLease]:
         return list(self._leases.values())
+
+    # ── resident tracking ────────────────────────────────────────────
+
+    def set_residents_for_node(
+        self,
+        node_id: str,
+        residents: list[tuple[str, str | None]],  # (service, model_name)
+    ) -> None:
+        """
+        Replace the resident snapshot for a node.
+
+        Preserves first_seen for entries whose service+model_name are unchanged,
+        so the dashboard can show how long a model has been warm.
+        """
+        new_keys = {f"{node_id}:{service}" for service, _ in residents}
+
+        # Remove stale entries (service no longer running on this node).
+        for key in list(self._residents):
+            if key.startswith(f"{node_id}:") and key not in new_keys:
+                del self._residents[key]
+
+        # Upsert: preserve first_seen when model is unchanged, reset otherwise.
+        for service, model_name in residents:
+            key = f"{node_id}:{service}"
+            existing = self._residents.get(key)
+            if existing is not None and existing.model_name == model_name:
+                continue  # same model still loaded — keep original first_seen
+            self._residents[key] = ResidentAllocation(
+                service=service,
+                node_id=node_id,
+                model_name=model_name,
+            )
+
+    def all_residents(self) -> list[ResidentAllocation]:
+        return list(self._residents.values())
+
+    def resident_keys(self) -> set[str]:
+        """Return set of 'node_id:service' strings for currently-warm services."""
+        return set(self._residents.keys())

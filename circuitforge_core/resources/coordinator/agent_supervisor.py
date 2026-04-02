@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
-from circuitforge_core.resources.models import GpuInfo, NodeInfo
+from circuitforge_core.resources.models import GpuInfo, NodeInfo, ResidentAllocation
 
 logger = logging.getLogger(__name__)
 
@@ -58,15 +58,27 @@ class AgentSupervisor:
             for r in self._agents.values()
         ]
 
+    def online_agents(self) -> "dict[str, AgentRecord]":
+        """Return only currently-online agents, keyed by node_id."""
+        return {nid: rec for nid, rec in self._agents.items() if rec.online}
+
     async def poll_agent(self, node_id: str) -> bool:
         record = self._agents.get(node_id)
         if record is None:
             return False
         try:
             async with httpx.AsyncClient(timeout=_AGENT_TIMEOUT_S) as client:
-                resp = await client.get(f"{record.agent_url}/gpu-info")
-            resp.raise_for_status()
-            data = resp.json()
+                gpu_resp = await client.get(f"{record.agent_url}/gpu-info")
+                gpu_resp.raise_for_status()
+
+                # Resident-info is best-effort — older agents may not have the endpoint.
+                try:
+                    res_resp = await client.get(f"{record.agent_url}/resident-info")
+                    resident_data = res_resp.json() if res_resp.is_success else {}
+                except Exception:
+                    resident_data = {}
+
+            data = gpu_resp.json()
             gpus = [
                 GpuInfo(
                     gpu_id=g["gpu_id"],
@@ -82,6 +94,13 @@ class AgentSupervisor:
             record.online = True
             for gpu in gpus:
                 self._lease_manager.register_gpu(node_id, gpu.gpu_id, gpu.vram_total_mb)
+
+            residents = [
+                (r["service"], r.get("model_name"))
+                for r in resident_data.get("residents", [])
+            ]
+            self._lease_manager.set_residents_for_node(node_id, residents)
+
             return True
         except Exception as exc:
             logger.warning("Agent %s unreachable: %s", node_id, exc)
