@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,15 @@ class GpuInfo:
     vram_total_mb: int
     vram_used_mb: int
     vram_free_mb: int
+
+
+@dataclass(frozen=True)
+class ResidentAllocation:
+    """A model that is loaded and warm in VRAM but not actively serving a request."""
+    service: str
+    node_id: str
+    model_name: Optional[str]  # None if service is running but model probe failed
+    first_seen: float = field(default_factory=time.time)
 
 
 @dataclass

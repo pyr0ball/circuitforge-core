@@ -5,6 +5,9 @@ __pycache__/
 dist/
 .pytest_cache/
 .superpowers/
+.coverage
+build/
+"<MagicMock*"
 
 # cf-orch private profiles (commit on personal/heimdall branch only)
 circuitforge_core/resources/profiles/private/
