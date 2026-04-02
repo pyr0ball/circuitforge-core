@@ -42,7 +42,7 @@ def select_node(
         for gpu in record.gpus:
             warm = f"{node_id}:{service}" in resident_keys
             effective = gpu.vram_free_mb + (_WARM_BONUS_MB if warm else 0)
-            can_fit = gpu.vram_free_mb >= service_max_mb // 2
+            can_fit = gpu.vram_free_mb >= service_max_mb
             candidates.append(_Scored(
                 node_id=node_id,
                 gpu_id=gpu.gpu_id,

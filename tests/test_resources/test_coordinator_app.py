@@ -149,8 +149,8 @@ def test_single_gpu_8gb_profile_has_idle_stop_after_s():
 
 
 def test_ensure_service_returns_503_when_vram_too_low():
-    """VRAM pre-flight guard fires before any HTTP request when free VRAM < max_mb // 2."""
-    # vllm max_mb = 5120 → threshold = 2560 MB; 100 MB free triggers 503.
+    """VRAM pre-flight guard fires before any HTTP request when free VRAM < service max_mb."""
+    # Threshold = full max_mb (not half); 100 MB free on any profile triggers 503.
     lease_manager = LeaseManager()
     lease_manager.register_gpu("low-vram-node", 0, 512)
     profile_registry = ProfileRegistry()
