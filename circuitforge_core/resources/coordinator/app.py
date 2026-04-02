@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid as _uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -14,6 +13,7 @@ from circuitforge_core.resources.coordinator.eviction_engine import EvictionEngi
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.node_selector import select_node
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 
 _DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
 
@@ -54,6 +54,7 @@ def create_coordinator_app(
     lease_manager: LeaseManager,
     profile_registry: ProfileRegistry,
     agent_supervisor: AgentSupervisor,
+    service_registry: ServiceRegistry,
 ) -> FastAPI:
     eviction_engine = EvictionEngine(lease_manager=lease_manager)
 
@@ -307,8 +308,17 @@ def create_coordinator_app(
                     )
                     if resp.is_success:
                         data = resp.json()
+                        alloc = service_registry.allocate(
+                            service=service,
+                            node_id=node_id,
+                            gpu_id=gpu_id,
+                            model=model,
+                            caller=req.caller,
+                            url=data.get("url", ""),
+                            ttl_s=req.ttl_s,
+                        )
                         return {
-                            "allocation_id": str(_uuid.uuid4()),
+                            "allocation_id": alloc.allocation_id,
                             "service": service,
                             "node_id": node_id,
                             "gpu_id": gpu_id,
@@ -325,6 +335,61 @@ def create_coordinator_app(
             503,
             detail=f"All model candidates exhausted for {service!r}. Last error: {last_error}",
         )
+
+    @app.delete("/api/services/{service}/allocations/{allocation_id}")
+    async def release_allocation(service: str, allocation_id: str) -> dict[str, Any]:
+        released = service_registry.release(allocation_id)
+        if not released:
+            raise HTTPException(404, detail=f"Allocation {allocation_id!r} not found")
+        return {"released": True, "allocation_id": allocation_id}
+
+    @app.get("/api/services/{service}/status")
+    def get_service_status(service: str) -> dict[str, Any]:
+        instances = [i for i in service_registry.all_instances() if i.service == service]
+        allocations = [a for a in service_registry.all_allocations() if a.service == service]
+        return {
+            "service": service,
+            "instances": [
+                {
+                    "node_id": i.node_id,
+                    "gpu_id": i.gpu_id,
+                    "state": i.state,
+                    "model": i.model,
+                    "url": i.url,
+                    "idle_since": i.idle_since,
+                }
+                for i in instances
+            ],
+            "allocations": [
+                {
+                    "allocation_id": a.allocation_id,
+                    "node_id": a.node_id,
+                    "gpu_id": a.gpu_id,
+                    "model": a.model,
+                    "caller": a.caller,
+                    "url": a.url,
+                    "expires_at": a.expires_at,
+                }
+                for a in allocations
+            ],
+        }
+
+    @app.get("/api/services")
+    def list_services() -> dict[str, Any]:
+        instances = service_registry.all_instances()
+        return {
+            "services": [
+                {
+                    "service": i.service,
+                    "node_id": i.node_id,
+                    "gpu_id": i.gpu_id,
+                    "state": i.state,
+                    "model": i.model,
+                    "url": i.url,
+                }
+                for i in instances
+            ]
+        }
 
     @app.delete("/api/services/{service}")
     async def stop_service(service: str, node_id: str) -> dict[str, Any]:

@@ -6,6 +6,7 @@ from circuitforge_core.resources.coordinator.app import create_coordinator_app
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo
 from circuitforge_core.resources.profiles.schema import load_profile
 
@@ -35,6 +36,7 @@ def coordinator_client():
         lease_manager=lease_manager,
         profile_registry=profile_registry,
         agent_supervisor=supervisor,
+        service_registry=ServiceRegistry(),
     )
     return TestClient(app), lease_manager
 

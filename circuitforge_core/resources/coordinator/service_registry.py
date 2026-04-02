@@ -121,6 +121,9 @@ class ServiceRegistry:
         self._instances[key] = inst
         return inst
 
+    def all_allocations(self) -> list[ServiceAllocation]:
+        return list(self._allocations.values())
+
     def all_instances(self) -> list[ServiceInstance]:
         return list(self._instances.values())
 
