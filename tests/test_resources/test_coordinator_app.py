@@ -1,11 +1,13 @@
 import pytest
 from unittest.mock import MagicMock
+from pathlib import Path
 from fastapi.testclient import TestClient
 from circuitforge_core.resources.coordinator.app import create_coordinator_app
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo
+from circuitforge_core.resources.profiles.schema import load_profile
 
 
 @pytest.fixture
@@ -132,3 +134,13 @@ def test_resident_keys_returns_set_of_node_service():
     lm.set_residents_for_node("heimdall", [("vllm", "Ouro-1.4B"), ("ollama", None)])
     keys = lm.resident_keys()
     assert keys == {"heimdall:vllm", "heimdall:ollama"}
+
+
+def test_single_gpu_8gb_profile_has_idle_stop_after_s():
+    profile = load_profile(
+        Path("circuitforge_core/resources/profiles/public/single-gpu-8gb.yaml")
+    )
+    vllm_svc = profile.services.get("vllm")
+    assert vllm_svc is not None
+    assert hasattr(vllm_svc, "idle_stop_after_s")
+    assert vllm_svc.idle_stop_after_s == 600
