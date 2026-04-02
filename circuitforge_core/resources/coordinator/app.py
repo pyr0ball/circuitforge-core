@@ -265,17 +265,15 @@ def create_coordinator_app(
         if not req.model_candidates:
             raise HTTPException(422, detail="model_candidates must be non-empty")
 
-        if req.gpu_id is None:
-            # Validate the service is known before attempting node selection.
-            known = any(
-                service in p.services
-                for p in profile_registry.list_public()
-            )
-            if not known:
-                raise HTTPException(422, detail=f"Unknown service {service!r} — not in any profile")
+        # Validate service is known in at least one profile, regardless of gpu_id
+        if not any(service in p.services for p in profile_registry.list_public()):
+            raise HTTPException(422, detail=f"Unknown service {service!r} — not in any profile")
 
+        residents = lease_manager.resident_keys()
+
+        if req.gpu_id is None:
             online = agent_supervisor.online_agents()
-            placement = select_node(online, service, profile_registry, lease_manager.resident_keys())
+            placement = select_node(online, service, profile_registry, residents)
             if placement is None:
                 raise HTTPException(
                     503,
@@ -297,7 +295,7 @@ def create_coordinator_app(
         if node_info is None:
             raise HTTPException(422, detail=f"Node {node_id!r} not found")
 
-        warm = f"{node_id}:{service}" in lease_manager.resident_keys()
+        warm = f"{node_id}:{service}" in residents
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             last_error = ""
