@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 _WARM_BONUS_MB = 1000
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Scored:
     node_id: str
     gpu_id: int
@@ -31,12 +31,13 @@ def select_node(
     Warm nodes (service already running) get priority, then sorted by free VRAM.
     Returns None if no suitable node exists.
     """
+    service_max_mb = _find_service_max_mb(service, profile_registry)
+    if service_max_mb is None:
+        return None  # service not in any profile
+
     candidates: list[_Scored] = []
     for node_id, record in agents.items():
         if not record.online:
-            continue
-        service_max_mb = _find_service_max_mb(service, profile_registry)
-        if service_max_mb is None:
             continue
         for gpu in record.gpus:
             warm = f"{node_id}:{service}" in resident_keys
@@ -52,12 +53,15 @@ def select_node(
             ))
     if not candidates:
         return None
-    # Warm nodes are always eligible (they already have the service resident).
-    # Cold nodes must pass the can_fit threshold. If no node passes either
-    # criterion, fall back to the full candidate set.
+    # Prefer: (1) warm nodes (model already resident — no cold start)
+    #         (2) cold nodes that can fit the service (free >= half of max_mb)
+    # Fallback: best-effort node when nothing fits and nothing is warm
+    #   (coordinator will attempt to start the service anyway; it may evict or fail)
+    # Note: resident_keys are per-node, not per-GPU. On multi-GPU nodes, the warm
+    #   bonus applies to all GPUs on the node. This is a known coarseness —
+    #   per-GPU resident tracking requires a resident_key format change.
     preferred = [c for c in candidates if c.warm or c.can_fit]
     pool = preferred if preferred else candidates
-    # Warm nodes take priority; within the same warmth tier, prefer more free VRAM.
     best = max(pool, key=lambda c: (c.warm, c.effective_free_mb))
     return best.node_id, best.gpu_id
 
