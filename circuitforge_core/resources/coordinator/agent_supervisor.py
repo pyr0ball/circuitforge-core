@@ -147,6 +147,9 @@ class AgentSupervisor:
     async def _run_idle_sweep(self) -> None:
         if self._service_registry is None:
             return
+        expired = self._service_registry.sweep_expired_allocations()
+        if expired:
+            logger.info("TTL sweep: expired %d allocation(s): %s", len(expired), expired)
         idle_stop_config = self._build_idle_stop_config()
         if not idle_stop_config:
             return

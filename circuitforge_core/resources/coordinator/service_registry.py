@@ -121,6 +121,25 @@ class ServiceRegistry:
         self._instances[key] = inst
         return inst
 
+    def get_allocation(self, allocation_id: str) -> ServiceAllocation | None:
+        return self._allocations.get(allocation_id)
+
+    def sweep_expired_allocations(self) -> list[str]:
+        """
+        Remove all allocations whose TTL has elapsed and transition the
+        corresponding instance to 'idle' if no active allocations remain.
+        Returns the list of expired allocation_ids.
+        """
+        now = time.time()
+        expired = [
+            alloc_id
+            for alloc_id, alloc in self._allocations.items()
+            if alloc.expires_at > 0 and now > alloc.expires_at
+        ]
+        for alloc_id in expired:
+            self.release(alloc_id)
+        return expired
+
     def all_allocations(self) -> list[ServiceAllocation]:
         return list(self._allocations.values())
 

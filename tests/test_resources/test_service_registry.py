@@ -61,3 +61,26 @@ def test_new_alloc_on_idle_instance_marks_it_running(registry):
                               model="M", url="http://h:8000")
     registry.allocate("vllm", "heimdall", 0, "M", "http://h:8000", "x", 300.0)
     assert registry.all_instances()[0].state == "running"
+
+
+def test_sweep_expired_allocations(registry):
+    # Register a running instance so idle-transition logic has something to act on.
+    registry.upsert_instance("vllm", "heimdall", 0, state="running",
+                              model="M", url="http://h:8000")
+    # Create an allocation with a very short TTL (1 second).
+    alloc = registry.allocate("vllm", "heimdall", 0, "M", "http://h:8000", "caller", ttl_s=1)
+    assert registry.active_allocations("vllm", "heimdall", 0) == 1
+
+    # Wait for TTL to elapse.
+    time.sleep(1.1)
+
+    expired = registry.sweep_expired_allocations()
+
+    # The allocation should have been swept.
+    assert alloc.allocation_id in expired
+    assert registry.active_allocations("vllm", "heimdall", 0) == 0
+
+    # The instance should have transitioned to idle since no allocations remain.
+    instance = registry.all_instances()[0]
+    assert instance.state == "idle"
+    assert instance.idle_since is not None

@@ -3,11 +3,14 @@ LLM abstraction layer with priority fallback chain.
 Reads config from ~/.config/circuitforge/llm.yaml.
 Tries backends in order; falls back on any error.
 """
+import logging
 import os
 import yaml
 import requests
 from pathlib import Path
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path.home() / ".config" / "circuitforge" / "llm.yaml"
 
@@ -62,7 +65,7 @@ class LLMRouter:
             alloc = ctx.__enter__()
             return (ctx, alloc)
         except Exception as exc:
-            print(f"[LLMRouter] cf_orch allocation failed, using base_url directly: {exc}")
+            logger.warning("[LLMRouter] cf_orch allocation failed, using base_url directly: %s", exc)
             return None
 
     def complete(self, prompt: str, system: str | None = None,

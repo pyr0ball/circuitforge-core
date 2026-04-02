@@ -346,6 +346,9 @@ def create_coordinator_app(
 
     @app.delete("/api/services/{service}/allocations/{allocation_id}")
     async def release_allocation(service: str, allocation_id: str) -> dict[str, Any]:
+        existing = service_registry.get_allocation(allocation_id)
+        if existing is None or existing.service != service:
+            raise HTTPException(404, detail=f"Allocation {allocation_id!r} not found for service {service!r}")
         released = service_registry.release(allocation_id)
         if not released:
             raise HTTPException(404, detail=f"Allocation {allocation_id!r} not found")

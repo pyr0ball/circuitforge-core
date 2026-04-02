@@ -61,11 +61,12 @@ class ServiceProfile(BaseModel):
             return values
         if not isinstance(raw, dict):
             return values
-        spec_type = raw.pop("type", None)
+        spec_type = raw.get("type")
+        managed_fields = {k: v for k, v in raw.items() if k != "type"}
         if spec_type == "docker":
-            values["managed"] = DockerSpec(**raw)
+            values["managed"] = DockerSpec(**managed_fields)
         elif spec_type == "process":
-            values["managed"] = ProcessSpec(**raw)
+            values["managed"] = ProcessSpec(**managed_fields)
         else:
             raise ValueError(f"Unknown managed service type: {spec_type!r}")
         return values
