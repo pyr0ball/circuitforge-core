@@ -44,11 +44,17 @@ def start(
     from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
     from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
     from circuitforge_core.resources.coordinator.app import create_coordinator_app
+    from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
     from circuitforge_core.resources.agent.gpu_monitor import GpuMonitor
 
     lease_manager = LeaseManager()
     profile_registry = ProfileRegistry()
-    supervisor = AgentSupervisor(lease_manager=lease_manager)
+    service_registry = ServiceRegistry()
+    supervisor = AgentSupervisor(
+        lease_manager=lease_manager,
+        service_registry=service_registry,
+        profile_registry=profile_registry,
+    )
 
     monitor = GpuMonitor()
     gpus = monitor.poll()
@@ -79,6 +85,7 @@ def start(
         lease_manager=lease_manager,
         profile_registry=profile_registry,
         agent_supervisor=supervisor,
+        service_registry=service_registry,
     )
 
     typer.echo(f"Starting cf-orch coordinator on {host}:{port}")
@@ -92,6 +99,7 @@ def agent(
     host: str = "0.0.0.0",
     port: int = 7701,
     advertise_host: Optional[str] = None,
+    profile: Annotated[Optional[Path], typer.Option(help="Profile YAML path")] = None,
 ) -> None:
     """Start a cf-orch node agent and self-register with the coordinator.
 
@@ -101,10 +109,11 @@ def agent(
     Use --advertise-host to override the IP the coordinator should use to
     reach this agent (e.g. on a multi-homed or NATted host).
     """
-    import asyncio
     import threading
     import httpx
     from circuitforge_core.resources.agent.app import create_agent_app
+    from circuitforge_core.resources.agent.service_manager import ServiceManager
+    from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 
     # The URL the coordinator should use to reach this agent.
     reach_host = advertise_host or ("127.0.0.1" if host in ("0.0.0.0", "::") else host)
@@ -132,7 +141,18 @@ def agent(
     # Fire registration in a daemon thread so uvicorn.run() can start blocking immediately.
     threading.Thread(target=_register_in_background, daemon=True).start()
 
-    agent_app = create_agent_app(node_id=node_id)
+    service_manager = None
+    try:
+        from circuitforge_core.resources.agent.gpu_monitor import GpuMonitor
+        pr = ProfileRegistry()
+        gpus = GpuMonitor().poll()
+        p = pr.load(Path(profile)) if profile else pr.auto_detect(gpus)
+        service_manager = ServiceManager(node_id=node_id, profile=p, advertise_host=reach_host)
+        typer.echo(f"ServiceManager ready with profile: {p.name}")
+    except Exception as exc:
+        typer.echo(f"Warning: ServiceManager unavailable ({exc})", err=True)
+
+    agent_app = create_agent_app(node_id=node_id, service_manager=service_manager)
     typer.echo(f"Starting cf-orch agent [{node_id}] on {host}:{port}")
     uvicorn.run(agent_app, host=host, port=port)
 
