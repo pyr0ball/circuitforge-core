@@ -52,8 +52,9 @@
   .gpu-node  { font-size: 0.75em; font-weight: 700; color: var(--indigo); margin-bottom: 1px; }
   .gpu-offline .gpu-node { color: var(--orange); }
   .gpu-name  { font-size: 0.78em; color: var(--text); margin-bottom: 0.4rem; }
-  .vram-track { background: var(--bg); border-radius: var(--radius-sm); height: 6px; margin-bottom: 0.3rem; }
-  .vram-fill  { height: 100%; border-radius: var(--radius-sm); transition: width 0.4s; }
+  .vram-track    { position: relative; background: var(--bg); border-radius: var(--radius-sm); height: 6px; margin-bottom: 0.3rem; overflow: hidden; }
+  .vram-leased   { position: absolute; left: 0; top: 0; height: 100%; background: var(--cyan);   transition: width 0.4s; }
+  .vram-resident { position: absolute; top: 0; height: 100%; background: var(--amber); transition: left 0.4s, width 0.4s; }
   .vram-label { font-size: 0.72em; color: var(--muted); margin-bottom: 0.25rem; }
   .gpu-status { font-size: 0.72em; }
   .gpu-status.idle { color: var(--green); }
@@ -62,20 +63,29 @@
   .gpu-status.offline { color: var(--orange); }
   .spark-track { height: 24px; background: var(--bg); border-radius: var(--radius-sm); margin-top: 0.4rem; overflow: hidden; }
 
-  /* leases */
-  #leases-table { width: 100%; border-collapse: collapse; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
-  #leases-table th { background: var(--bg3); color: var(--dim); font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
-  #leases-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-dim); font-size: 0.8em; vertical-align: middle; }
-  #leases-table tr:last-child td { border-bottom: none; }
+  /* shared table base */
+  .cf-table { width: 100%; border-collapse: collapse; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
+  .cf-table th { background: var(--bg3); color: var(--dim); font-size: 0.72em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+  .cf-table td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--border-dim); font-size: 0.8em; vertical-align: middle; }
+  .cf-table tr:last-child td { border-bottom: none; }
   .td-service  { color: var(--indigo); font-weight: 600; }
   .td-node     { color: var(--muted); }
   .td-mb       { color: var(--text); }
   .td-priority { color: var(--amber); }
+  .td-model    { color: var(--cyan); font-size: 0.75em; }
+  .td-warm     { color: var(--amber); }
   .td-none     { color: var(--dim); font-style: italic; }
   .ttl-wrap    { display: flex; align-items: center; gap: 0.5rem; }
   .ttl-label   { color: var(--cyan); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ttl-track   { flex: 1; background: var(--bg); border-radius: var(--radius-sm); height: 4px; }
   .ttl-fill    { height: 100%; border-radius: var(--radius-sm); background: var(--cyan); transition: width 0.4s; }
+
+  /* service state classes */
+  .state-running  { color: #2ecc40; }
+  .state-idle     { color: #ff851b; }
+  .state-stopped  { color: #aaa; }
+  .state-starting { color: #0074d9; }
+  .state-unknown  { color: #ff4136; }
 
   /* error */
   #error-banner { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: var(--radius); color: var(--red); padding: 0.5rem 0.75rem; font-size: 0.82em; margin-bottom: 1rem; }
@@ -102,8 +112,20 @@
 <div class="section-label">GPU Nodes</div>
 <div id="gpu-grid"></div>
 
+<div id="services-section">
+  <div class="section-label">Service Instances</div>
+  <table class="cf-table" id="services-table">
+    <thead>
+      <tr>
+        <th>Service</th><th>Node</th><th>GPU</th><th>State</th><th>Model</th><th>URL</th>
+      </tr>
+    </thead>
+    <tbody id="services-body"></tbody>
+  </table>
+</div>
+
 <div class="section-label">Active Leases</div>
-<table id="leases-table">
+<table class="cf-table" id="leases-table">
   <thead>
     <tr>
       <th>Service</th><th>Node / GPU</th><th>VRAM</th><th>Priority</th><th>TTL / Expires</th>
@@ -112,10 +134,22 @@
   <tbody id="leases-body"></tbody>
 </table>
 
+<div class="section-label">Warm Models</div>
+<table class="cf-table" id="resident-table">
+  <thead>
+    <tr>
+      <th>Service</th><th>Node</th><th>Model</th><th>Warm Since</th>
+    </tr>
+  </thead>
+  <tbody id="resident-body"></tbody>
+</table>
+
 <footer>
   <span>cf-orch · circuitforge-core</span>
   <a href="/api/nodes" target="_blank">/api/nodes</a>
   <a href="/api/leases" target="_blank">/api/leases</a>
+  <a href="/api/resident" target="_blank">/api/resident</a>
+  <a href="/api/services" target="_blank">/api/services</a>
   <a href="/api/health" target="_blank">/api/health</a>
 </footer>
 
@@ -198,6 +232,41 @@ setInterval(() => {
   document.getElementById('countdown').textContent = countdown;
 }, 1000);
 
+// ── state class helper ───────────────────────────────────────────
+function stateClass(state) {
+  const map = { running: 'state-running', idle: 'state-idle', stopped: 'state-stopped', starting: 'state-starting' };
+  return map[state] || 'state-unknown';
+}
+
+// ── render: services table ───────────────────────────────────────
+function renderServices(services) {
+  const tbody = document.getElementById('services-body');
+  if (!services || services.length === 0) {
+    const tr = document.createElement('tr');
+    const td = el('td', { cls: 'td-none', text: 'No service instances registered.' });
+    td.setAttribute('colspan', '6');
+    tr.appendChild(td);
+    setChildren(tbody, tr);
+    return;
+  }
+
+  const rows = services.map(svc => {
+    const tr = document.createElement('tr');
+    const fields = [
+      { text: svc.service,              cls: 'td-service' },
+      { text: svc.node_id,              cls: 'td-node'    },
+      { text: String(svc.gpu_id),       cls: 'td-mb'      },
+      { text: svc.state,                cls: stateClass(svc.state) },
+      { text: svc.model || '\u2014',    cls: 'td-model'   },
+      { text: svc.url   || '\u2014',    cls: 'td-node'    },
+    ];
+    fields.forEach(f => tr.appendChild(el('td', { cls: f.cls, text: f.text })));
+    return tr;
+  });
+
+  setChildren(tbody, ...rows);
+}
+
 // ── render: health strip ─────────────────────────────────────────
 function renderHealth(ok) {
   const strip = document.getElementById('health-strip');
@@ -206,7 +275,8 @@ function renderHealth(ok) {
 }
 
 // ── render: GPU grid ─────────────────────────────────────────────
-function renderNodes(nodes) {
+// leasedByGpu: "nodeId:gpuId" → total MB currently leased (from active leases)
+function renderNodes(nodes, leasedByGpu) {
   const grid = document.getElementById('gpu-grid');
   if (!nodes || nodes.length === 0) {
     setChildren(grid, el('div', { text: 'No nodes registered.', style: { color: 'var(--dim)', fontSize: '0.8em', padding: '0.5rem' } }));
@@ -216,33 +286,46 @@ function renderNodes(nodes) {
   const cards = [];
   for (const node of nodes) {
     for (const gpu of node.gpus) {
-      const key = node.node_id + ':' + gpu.gpu_id;
-      const pct = gpu.vram_total_mb > 0 ? gpu.vram_used_mb / gpu.vram_total_mb : 0;
-      const usedGb  = (gpu.vram_used_mb / 1024).toFixed(1);
-      const totalGb = (gpu.vram_total_mb / 1024).toFixed(1);
-      const color   = vramColor(pct);
+      const key      = node.node_id + ':' + gpu.gpu_id;
+      const total    = gpu.vram_total_mb || 1;
+      const used     = gpu.vram_used_mb;
+      const leased   = leasedByGpu[key] || 0;
+      // Resident = nvidia-smi used minus actively leased; clamped to [0, used].
+      const resident = Math.max(0, Math.min(used - leased, used));
+      const pct      = used / total;
 
       if (!sparkHistory[key]) sparkHistory[key] = [];
-      sparkHistory[key].push(gpu.vram_used_mb);
+      sparkHistory[key].push(used);
       if (sparkHistory[key].length > 20) sparkHistory[key].shift();
 
       const statusCls  = pct >= 0.9 ? 'full' : pct >= 0.1 ? 'busy' : 'idle';
       const statusText = pct >= 0.9 ? 'saturated' : pct >= 0.1 ? Math.round(pct * 100) + '% used' : 'idle';
 
-      const card = el('div', { cls: 'gpu-card' });
-
+      const card      = el('div', { cls: 'gpu-card' });
       const nodeLabel = el('div', { cls: 'gpu-node', text: node.node_id.toUpperCase() + ' · GPU ' + gpu.gpu_id });
       const nameLine  = el('div', { cls: 'gpu-name', text: gpu.name || 'Unknown GPU' });
 
-      const track = el('div', { cls: 'vram-track' });
-      const fill  = el('div', { cls: 'vram-fill', style: { width: (pct * 100).toFixed(1) + '%', background: color } });
-      track.appendChild(fill);
+      // Stacked bar: cyan (leased) → amber (resident) → dark bg (free).
+      const leasedPct   = (leased   / total * 100).toFixed(1);
+      const residentPct = (resident / total * 100).toFixed(1);
+      const track        = el('div', { cls: 'vram-track' });
+      const fillLeased   = el('div', { cls: 'vram-leased',   style: { width: leasedPct + '%' } });
+      const fillResident = el('div', { cls: 'vram-resident', style: { left: leasedPct + '%', width: residentPct + '%' } });
+      append(track, fillLeased, fillResident);
 
-      const vramLbl  = el('div', { cls: 'vram-label', text: usedGb + ' / ' + totalGb + ' GB' });
-      const statusEl = el('div', { cls: 'gpu-status ' + statusCls, text: statusText });
+      // Breakdown label when something is allocated.
+      let labelText = (used / 1024).toFixed(1) + ' / ' + (total / 1024).toFixed(1) + ' GB';
+      if (leased > 0 || resident > 0) {
+        const parts = [];
+        if (leased   > 0) parts.push((leased   / 1024).toFixed(1) + 'G leased');
+        if (resident > 0) parts.push((resident / 1024).toFixed(1) + 'G resident');
+        labelText += '  (' + parts.join(' · ') + ')';
+      }
 
+      const vramLbl    = el('div', { cls: 'vram-label', text: labelText });
+      const statusEl   = el('div', { cls: 'gpu-status ' + statusCls, text: statusText });
       const sparkTrack = el('div', { cls: 'spark-track' });
-      sparkTrack.appendChild(buildSparkline(sparkHistory[key], gpu.vram_total_mb));
+      sparkTrack.appendChild(buildSparkline(sparkHistory[key], total));
 
       append(card, nodeLabel, nameLine, track, vramLbl, statusEl, sparkTrack);
       cards.push(card);
@@ -250,6 +333,40 @@ function renderNodes(nodes) {
   }
 
   setChildren(grid, ...cards);
+}
+
+// ── render: warm models table ────────────────────────────────────
+function renderResidents(residents) {
+  const tbody = document.getElementById('resident-body');
+  if (!residents || residents.length === 0) {
+    const tr = document.createElement('tr');
+    const td = el('td', { cls: 'td-none', text: 'No warm models detected.' });
+    td.setAttribute('colspan', '4');
+    tr.appendChild(td);
+    setChildren(tbody, tr);
+    return;
+  }
+
+  const now = Date.now() / 1000;
+  const rows = residents.map(r => {
+    const warmSecs = now - (r.first_seen || now);
+    const warmText = warmSecs < 60
+      ? Math.floor(warmSecs) + 's'
+      : warmSecs < 3600
+        ? Math.floor(warmSecs / 60) + 'm ' + String(Math.floor(warmSecs % 60)).padStart(2, '0') + 's'
+        : Math.floor(warmSecs / 3600) + 'h ' + String(Math.floor((warmSecs % 3600) / 60)).padStart(2, '0') + 'm';
+
+    const tr = document.createElement('tr');
+    append(tr,
+      el('td', { cls: 'td-service', text: r.service }),
+      el('td', { cls: 'td-node',    text: r.node_id }),
+      el('td', { cls: 'td-model',   text: r.model_name || '—' }),
+      el('td', { cls: 'td-warm',    text: warmText }),
+    );
+    return tr;
+  });
+
+  setChildren(tbody, ...rows);
 }
 
 // ── render: leases table ─────────────────────────────────────────
@@ -316,17 +433,33 @@ function clearError() { document.getElementById('error-banner').style.display = 
 // ── poll ─────────────────────────────────────────────────────────
 async function poll() {
   try {
-    const [nodesRes, leasesRes, healthRes] = await Promise.all([
+    const [nodesRes, leasesRes, residentRes, healthRes, servicesRes] = await Promise.all([
       fetch('/api/nodes'),
       fetch('/api/leases'),
+      fetch('/api/resident'),
       fetch('/api/health'),
+      fetch('/api/services'),
     ]);
     if (!nodesRes.ok || !leasesRes.ok) throw new Error('API error: ' + nodesRes.status);
-    const [nodesData, leasesData] = await Promise.all([nodesRes.json(), leasesRes.json()]);
+    const [nodesData, leasesData, residentData, servicesData] = await Promise.all([
+      nodesRes.json(), leasesRes.json(),
+      residentRes.ok  ? residentRes.json()  : Promise.resolve({ residents: [] }),
+      servicesRes.ok  ? servicesRes.json()  : Promise.resolve({ services: [] }),
+    ]);
+
+    // Build per-GPU leased-MB index for the stacked bar.
+    const leasedByGpu = {};
+    for (const lease of (leasesData.leases || [])) {
+      const key = lease.node_id + ':' + lease.gpu_id;
+      leasedByGpu[key] = (leasedByGpu[key] || 0) + lease.mb_granted;
+    }
+
     clearError();
     renderHealth(healthRes.ok);
-    renderNodes(nodesData.nodes   || []);
+    renderNodes(nodesData.nodes || [], leasedByGpu);
+    renderServices(servicesData.services || []);
     renderLeases(leasesData.leases || []);
+    renderResidents(residentData.residents || []);
   } catch (err) {
     showError('Failed to reach coordinator: ' + err.message);
     renderHealth(false);

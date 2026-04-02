@@ -11,6 +11,7 @@ from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.app import create_coordinator_app
+from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo
 
 
@@ -47,6 +48,7 @@ def system():
         lease_manager=lease_manager,
         profile_registry=profile_registry,
         agent_supervisor=mock_supervisor,
+        service_registry=ServiceRegistry(),
     )
     client = TestClient(app)
     return client, lease_manager

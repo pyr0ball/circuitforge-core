@@ -1,10 +1,14 @@
 import pytest
 from unittest.mock import MagicMock
+from pathlib import Path
 from fastapi.testclient import TestClient
 from circuitforge_core.resources.coordinator.app import create_coordinator_app
+from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo
+from circuitforge_core.resources.profiles.schema import load_profile
 
 
 @pytest.fixture
@@ -32,6 +36,7 @@ def coordinator_client():
         lease_manager=lease_manager,
         profile_registry=profile_registry,
         agent_supervisor=supervisor,
+        service_registry=ServiceRegistry(),
     )
     return TestClient(app), lease_manager
 
@@ -112,3 +117,67 @@ def test_dashboard_serves_html(coordinator_client):
     assert "cf-orch" in resp.text
     assert "/api/nodes" in resp.text
     assert "/api/leases" in resp.text
+
+
+def test_online_agents_excludes_offline():
+    lm = LeaseManager()
+    sup = AgentSupervisor(lm)
+    sup.register("online_node", "http://a:7701")
+    sup.register("offline_node", "http://b:7701")
+    sup._agents["online_node"].online = True
+    sup._agents["offline_node"].online = False
+    result = sup.online_agents()
+    assert "online_node" in result
+    assert "offline_node" not in result
+
+
+def test_resident_keys_returns_set_of_node_service():
+    lm = LeaseManager()
+    lm.set_residents_for_node("heimdall", [("vllm", "Ouro-1.4B"), ("ollama", None)])
+    keys = lm.resident_keys()
+    assert keys == {"heimdall:vllm", "heimdall:ollama"}
+
+
+def test_single_gpu_8gb_profile_has_idle_stop_after_s():
+    profile = load_profile(
+        Path("circuitforge_core/resources/profiles/public/single-gpu-8gb.yaml")
+    )
+    vllm_svc = profile.services.get("vllm")
+    assert vllm_svc is not None
+    assert hasattr(vllm_svc, "idle_stop_after_s")
+    assert vllm_svc.idle_stop_after_s == 600
+
+
+def test_ensure_service_returns_503_when_vram_too_low():
+    """VRAM pre-flight guard fires before any HTTP request when free VRAM < max_mb // 2."""
+    # vllm max_mb = 5120 → threshold = 2560 MB; 100 MB free triggers 503.
+    lease_manager = LeaseManager()
+    lease_manager.register_gpu("low-vram-node", 0, 512)
+    profile_registry = ProfileRegistry()
+    supervisor = MagicMock()
+    supervisor.get_node_info.return_value = NodeInfo(
+        node_id="low-vram-node",
+        agent_url="http://localhost:7701",
+        gpus=[GpuInfo(gpu_id=0, name="GTX 1050",
+                      vram_total_mb=512, vram_used_mb=412, vram_free_mb=100)],
+        last_heartbeat=0.0,
+    )
+    supervisor.all_nodes.return_value = []
+    app = create_coordinator_app(
+        lease_manager=lease_manager,
+        profile_registry=profile_registry,
+        agent_supervisor=supervisor,
+        service_registry=ServiceRegistry(),
+    )
+    client = TestClient(app)
+
+    resp = client.post("/api/services/vllm/ensure", json={
+        "node_id": "low-vram-node",
+        "gpu_id": 0,
+        "params": {"model": "some-model"},
+    })
+
+    assert resp.status_code == 503
+    assert "Insufficient VRAM" in resp.json()["detail"]
+    # Guard must fire before any agent HTTP call is attempted.
+    supervisor.get_node_info.assert_called_once_with("low-vram-node")

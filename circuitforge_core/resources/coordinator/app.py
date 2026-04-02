@@ -11,7 +11,9 @@ from pydantic import BaseModel
 from circuitforge_core.resources.coordinator.agent_supervisor import AgentSupervisor
 from circuitforge_core.resources.coordinator.eviction_engine import EvictionEngine
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
+from circuitforge_core.resources.coordinator.node_selector import select_node
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
+from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 
 _DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
 
@@ -30,10 +32,29 @@ class NodeRegisterRequest(BaseModel):
     agent_url: str  # e.g. "http://10.1.10.71:7701"
 
 
+class ServiceEnsureRequest(BaseModel):
+    node_id: str
+    gpu_id: int = 0
+    params: dict[str, str] = {}
+    ttl_s: float = 3600.0
+    # Ordered list of model names to try; falls back down the list if VRAM is tight.
+    # The "model" key in params is used if this list is empty.
+    model_candidates: list[str] = []
+
+
+class ServiceAllocateRequest(BaseModel):
+    model_candidates: list[str] = []
+    gpu_id: int | None = None
+    params: dict[str, str] = {}
+    ttl_s: float = 3600.0
+    caller: str = ""
+
+
 def create_coordinator_app(
     lease_manager: LeaseManager,
     profile_registry: ProfileRegistry,
     agent_supervisor: AgentSupervisor,
+    service_registry: ServiceRegistry,
 ) -> FastAPI:
     eviction_engine = EvictionEngine(lease_manager=lease_manager)
 
@@ -92,6 +113,20 @@ def create_coordinator_app(
             "profiles": [
                 {"name": p.name, "vram_total_mb": p.vram_total_mb}
                 for p in profile_registry.list_public()
+            ]
+        }
+
+    @app.get("/api/resident")
+    def get_residents() -> dict[str, Any]:
+        return {
+            "residents": [
+                {
+                    "service": r.service,
+                    "node_id": r.node_id,
+                    "model_name": r.model_name,
+                    "first_seen": r.first_seen,
+                }
+                for r in lease_manager.all_residents()
             ]
         }
 
@@ -154,5 +189,233 @@ def create_coordinator_app(
         if not released:
             raise HTTPException(status_code=404, detail=f"Lease {lease_id!r} not found")
         return {"released": True, "lease_id": lease_id}
+
+    @app.post("/api/services/{service}/ensure")
+    async def ensure_service(service: str, req: ServiceEnsureRequest) -> dict[str, Any]:
+        """
+        Ensure a managed service is running on the given node.
+
+        If model_candidates is provided, tries each model in order, skipping any
+        that exceed the live free VRAM on the target GPU. Falls back down the list
+        until one succeeds. The selected model is returned in the response.
+        """
+        import httpx
+
+        node_info = agent_supervisor.get_node_info(req.node_id)
+        if node_info is None:
+            raise HTTPException(422, detail=f"Unknown node_id {req.node_id!r}")
+
+        # Resolve candidate list — fall back to params["model"] if not specified.
+        candidates: list[str] = req.model_candidates or (
+            [req.params["model"]] if "model" in req.params else []
+        )
+        if not candidates:
+            raise HTTPException(422, detail="No model specified: set params.model or model_candidates")
+
+        # Live free VRAM on the target GPU (used for pre-flight filtering).
+        gpu = next((g for g in node_info.gpus if g.gpu_id == req.gpu_id), None)
+        free_mb = gpu.vram_free_mb if gpu else 0
+
+        # Profile max_mb for the service gives us the VRAM ceiling for this slot.
+        # Models larger than free_mb are skipped before we even try to start them.
+        # We use model file size as a rough proxy — skip if free_mb < half of max_mb,
+        # since a fully-loaded model typically needs ~50-80% of its param size in VRAM.
+        service_max_mb = 0
+        for p in profile_registry.list_public():
+            svc = p.services.get(service)
+            if svc:
+                service_max_mb = svc.max_mb
+                break
+
+        # Filter candidates by VRAM headroom — skip models where free VRAM
+        # is less than half of the service's max_mb ceiling.
+        if service_max_mb > 0 and free_mb < service_max_mb // 2:
+            raise HTTPException(
+                503,
+                detail=f"Insufficient VRAM on gpu {req.gpu_id}: {free_mb}MB free, need at least {service_max_mb // 2}MB",
+            )
+
+        last_error: str = ""
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            for model in candidates:
+                params_with_model = {**req.params, "model": model}
+                try:
+                    start_resp = await client.post(
+                        f"{node_info.agent_url}/services/{service}/start",
+                        json={"gpu_id": req.gpu_id, "params": params_with_model},
+                    )
+                    if start_resp.is_success:
+                        data = start_resp.json()
+                        return {
+                            "service": service,
+                            "node_id": req.node_id,
+                            "gpu_id": req.gpu_id,
+                            "model": model,
+                            "url": data.get("url"),
+                            "running": data.get("running", False),
+                        }
+                    last_error = start_resp.text
+                except httpx.HTTPError as exc:
+                    raise HTTPException(502, detail=f"Agent unreachable: {exc}")
+
+        raise HTTPException(
+            503,
+            detail=f"All model candidates exhausted for {service!r}. Last error: {last_error}",
+        )
+
+    @app.post("/api/services/{service}/allocate")
+    async def allocate_service(service: str, req: ServiceAllocateRequest) -> dict[str, Any]:
+        """
+        Allocate a managed service — coordinator picks the best node automatically.
+        Returns a URL + allocation_id. (Allocation not tracked server-side until Phase 2.)
+        """
+        import httpx
+
+        if not req.model_candidates:
+            raise HTTPException(422, detail="model_candidates must be non-empty")
+
+        # Validate service is known in at least one profile, regardless of gpu_id
+        if not any(service in p.services for p in profile_registry.list_public()):
+            raise HTTPException(422, detail=f"Unknown service {service!r} — not in any profile")
+
+        residents = lease_manager.resident_keys()
+
+        if req.gpu_id is None:
+            online = agent_supervisor.online_agents()
+            placement = select_node(online, service, profile_registry, residents)
+            if placement is None:
+                raise HTTPException(
+                    503,
+                    detail=f"No online node has capacity for service {service!r}",
+                )
+            node_id, gpu_id = placement
+        else:
+            online = agent_supervisor.online_agents()
+            node_id = next(
+                (nid for nid, rec in online.items()
+                 if any(g.gpu_id == req.gpu_id for g in rec.gpus)),
+                None,
+            )
+            if node_id is None:
+                raise HTTPException(422, detail=f"No online node has gpu_id={req.gpu_id}")
+            gpu_id = req.gpu_id
+
+        node_info = agent_supervisor.get_node_info(node_id)
+        if node_info is None:
+            raise HTTPException(422, detail=f"Node {node_id!r} not found")
+
+        warm = f"{node_id}:{service}" in residents
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            last_error = ""
+            for model in req.model_candidates:
+                try:
+                    resp = await client.post(
+                        f"{node_info.agent_url}/services/{service}/start",
+                        json={"gpu_id": gpu_id, "params": {**req.params, "model": model}},
+                    )
+                    if resp.is_success:
+                        data = resp.json()
+                        alloc = service_registry.allocate(
+                            service=service,
+                            node_id=node_id,
+                            gpu_id=gpu_id,
+                            model=model,
+                            caller=req.caller,
+                            url=data.get("url", ""),
+                            ttl_s=req.ttl_s,
+                        )
+                        return {
+                            "allocation_id": alloc.allocation_id,
+                            "service": service,
+                            "node_id": node_id,
+                            "gpu_id": gpu_id,
+                            "model": model,
+                            "url": data.get("url"),
+                            "started": not warm,
+                            "warm": warm,
+                        }
+                    last_error = resp.text
+                except httpx.HTTPError as exc:
+                    raise HTTPException(502, detail=f"Agent unreachable: {exc}")
+
+        raise HTTPException(
+            503,
+            detail=f"All model candidates exhausted for {service!r}. Last error: {last_error}",
+        )
+
+    @app.delete("/api/services/{service}/allocations/{allocation_id}")
+    async def release_allocation(service: str, allocation_id: str) -> dict[str, Any]:
+        existing = service_registry.get_allocation(allocation_id)
+        if existing is None or existing.service != service:
+            raise HTTPException(404, detail=f"Allocation {allocation_id!r} not found for service {service!r}")
+        released = service_registry.release(allocation_id)
+        if not released:
+            raise HTTPException(404, detail=f"Allocation {allocation_id!r} not found")
+        return {"released": True, "allocation_id": allocation_id}
+
+    @app.get("/api/services/{service}/status")
+    def get_service_status(service: str) -> dict[str, Any]:
+        instances = [i for i in service_registry.all_instances() if i.service == service]
+        allocations = [a for a in service_registry.all_allocations() if a.service == service]
+        return {
+            "service": service,
+            "instances": [
+                {
+                    "node_id": i.node_id,
+                    "gpu_id": i.gpu_id,
+                    "state": i.state,
+                    "model": i.model,
+                    "url": i.url,
+                    "idle_since": i.idle_since,
+                }
+                for i in instances
+            ],
+            "allocations": [
+                {
+                    "allocation_id": a.allocation_id,
+                    "node_id": a.node_id,
+                    "gpu_id": a.gpu_id,
+                    "model": a.model,
+                    "caller": a.caller,
+                    "url": a.url,
+                    "expires_at": a.expires_at,
+                }
+                for a in allocations
+            ],
+        }
+
+    @app.get("/api/services")
+    def list_services() -> dict[str, Any]:
+        instances = service_registry.all_instances()
+        return {
+            "services": [
+                {
+                    "service": i.service,
+                    "node_id": i.node_id,
+                    "gpu_id": i.gpu_id,
+                    "state": i.state,
+                    "model": i.model,
+                    "url": i.url,
+                }
+                for i in instances
+            ]
+        }
+
+    @app.delete("/api/services/{service}")
+    async def stop_service(service: str, node_id: str) -> dict[str, Any]:
+        """Stop a managed service on the given node."""
+        node_info = agent_supervisor.get_node_info(node_id)
+        if node_info is None:
+            raise HTTPException(422, detail=f"Unknown node_id {node_id!r}")
+
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                resp = await client.post(f"{node_info.agent_url}/services/{service}/stop")
+                resp.raise_for_status()
+                return {"service": service, "node_id": node_id, "stopped": resp.json().get("stopped", False)}
+            except httpx.HTTPError as exc:
+                raise HTTPException(502, detail=f"Agent unreachable: {exc}")
 
     return app

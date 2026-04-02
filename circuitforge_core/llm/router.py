@@ -3,11 +3,14 @@ LLM abstraction layer with priority fallback chain.
 Reads config from ~/.config/circuitforge/llm.yaml.
 Tries backends in order; falls back on any error.
 """
+import logging
 import os
 import yaml
 import requests
 from pathlib import Path
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path.home() / ".config" / "circuitforge" / "llm.yaml"
 
@@ -37,6 +40,33 @@ class LLMRouter:
             return model
         models = client.models.list()
         return models.data[0].id
+
+    def _try_cf_orch_alloc(self, backend: dict) -> "tuple | None":
+        """
+        If backend config has a cf_orch block and CF_ORCH_URL is set (env takes
+        precedence over yaml url), allocate via cf-orch and return (ctx, alloc).
+        Returns None if not configured or allocation fails.
+        Caller MUST call ctx.__exit__(None, None, None) in a finally block.
+        """
+        import os
+        orch_cfg = backend.get("cf_orch")
+        if not orch_cfg:
+            return None
+        orch_url = os.environ.get("CF_ORCH_URL", orch_cfg.get("url", ""))
+        if not orch_url:
+            return None
+        try:
+            from circuitforge_core.resources.client import CFOrchClient
+            client = CFOrchClient(orch_url)
+            service = orch_cfg.get("service", "vllm")
+            candidates = orch_cfg.get("model_candidates", [])
+            ttl_s = float(orch_cfg.get("ttl_s", 3600.0))
+            ctx = client.allocate(service, model_candidates=candidates, ttl_s=ttl_s, caller="llm-router")
+            alloc = ctx.__enter__()
+            return (ctx, alloc)
+        except Exception as exc:
+            logger.warning("[LLMRouter] cf_orch allocation failed, using base_url directly: %s", exc)
+            return None
 
     def complete(self, prompt: str, system: str | None = None,
                  model_override: str | None = None,
@@ -105,6 +135,12 @@ class LLMRouter:
                 if not self._is_reachable(backend["base_url"]):
                     print(f"[LLMRouter] {name}: unreachable, skipping")
                     continue
+                # --- cf_orch: optionally override base_url with coordinator-allocated URL ---
+                orch_ctx = orch_alloc = None
+                orch_result = self._try_cf_orch_alloc(backend)
+                if orch_result is not None:
+                    orch_ctx, orch_alloc = orch_result
+                    backend = {**backend, "base_url": orch_alloc.url + "/v1"}
                 try:
                     client = OpenAI(
                         base_url=backend["base_url"],
@@ -136,6 +172,12 @@ class LLMRouter:
                 except Exception as e:
                     print(f"[LLMRouter] {name}: error — {e}, trying next")
                     continue
+                finally:
+                    if orch_ctx is not None:
+                        try:
+                            orch_ctx.__exit__(None, None, None)
+                        except Exception:
+                            pass
 
             elif backend["type"] == "anthropic":
                 api_key = os.environ.get(backend["api_key_env"], "")
