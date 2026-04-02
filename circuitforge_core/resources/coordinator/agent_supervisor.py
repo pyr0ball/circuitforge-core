@@ -45,6 +45,10 @@ class AgentSupervisor:
         if node_id not in self._agents:
             self._agents[node_id] = AgentRecord(node_id=node_id, agent_url=agent_url)
             logger.info("Registered agent node: %s @ %s", node_id, agent_url)
+        else:
+            if self._agents[node_id].agent_url != agent_url:
+                self._agents[node_id].agent_url = agent_url
+                logger.info("Updated agent URL for %s → %s", node_id, agent_url)
 
     def get_node_info(self, node_id: str) -> NodeInfo | None:
         record = self._agents.get(node_id)
@@ -156,7 +160,11 @@ class AgentSupervisor:
                 "Idle sweep: stopping %s on %s gpu%s (idle timeout)",
                 instance.service, instance.node_id, instance.gpu_id,
             )
-            await self._http_post(stop_url)
+            success = await self._http_post(stop_url)
+            if success:
+                self._service_registry.mark_stopped(
+                    instance.service, instance.node_id, instance.gpu_id
+                )
 
     async def run_heartbeat_loop(self) -> None:
         self._running = True

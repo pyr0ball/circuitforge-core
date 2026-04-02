@@ -84,17 +84,17 @@ class ServiceRegistry:
             return False
         # If no active allocations remain for this instance, mark it idle
         key = f"{alloc.service}:{alloc.node_id}:{alloc.gpu_id}"
-        if self.active_allocations(alloc.service, alloc.node_id) == 0:
+        if self.active_allocations(alloc.service, alloc.node_id, alloc.gpu_id) == 0:
             if key in self._instances:
                 self._instances[key] = dataclasses.replace(
                     self._instances[key], state="idle", idle_since=time.time()
                 )
         return True
 
-    def active_allocations(self, service: str, node_id: str) -> int:
+    def active_allocations(self, service: str, node_id: str, gpu_id: int) -> int:
         return sum(
             1 for a in self._allocations.values()
-            if a.service == service and a.node_id == node_id
+            if a.service == service and a.node_id == node_id and a.gpu_id == gpu_id
         )
 
     # ── instance API ─────────────────────────────────────────────────
@@ -126,6 +126,14 @@ class ServiceRegistry:
 
     def all_instances(self) -> list[ServiceInstance]:
         return list(self._instances.values())
+
+    def mark_stopped(self, service: str, node_id: str, gpu_id: int) -> None:
+        """Transition an instance to 'stopped' state and clear idle_since."""
+        key = f"{service}:{node_id}:{gpu_id}"
+        if key in self._instances:
+            self._instances[key] = dataclasses.replace(
+                self._instances[key], state="stopped", idle_since=None
+            )
 
     def idle_past_timeout(self, idle_stop_config: dict[str, int]) -> list[ServiceInstance]:
         """

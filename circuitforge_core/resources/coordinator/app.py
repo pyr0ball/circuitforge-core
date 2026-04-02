@@ -227,6 +227,14 @@ def create_coordinator_app(
                 service_max_mb = svc.max_mb
                 break
 
+        # Filter candidates by VRAM headroom — skip models where free VRAM
+        # is less than half of the service's max_mb ceiling.
+        if service_max_mb > 0 and free_mb < service_max_mb // 2:
+            raise HTTPException(
+                503,
+                detail=f"Insufficient VRAM on gpu {req.gpu_id}: {free_mb}MB free, need at least {service_max_mb // 2}MB",
+            )
+
         last_error: str = ""
         async with httpx.AsyncClient(timeout=120.0) as client:
             for model in candidates:

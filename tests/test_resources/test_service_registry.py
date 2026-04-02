@@ -25,13 +25,13 @@ def test_allocate_creates_allocation(registry):
 def test_active_allocations_count(registry):
     registry.allocate("vllm", "heimdall", 0, "M", "http://h:8000", "a", 300.0)
     registry.allocate("vllm", "heimdall", 0, "M", "http://h:8000", "b", 300.0)
-    assert registry.active_allocations("vllm", "heimdall") == 2
+    assert registry.active_allocations("vllm", "heimdall", 0) == 2
 
 
 def test_release_decrements_count(registry):
     alloc = registry.allocate("vllm", "heimdall", 0, "M", "http://h:8000", "a", 300.0)
     registry.release(alloc.allocation_id)
-    assert registry.active_allocations("vllm", "heimdall") == 0
+    assert registry.active_allocations("vllm", "heimdall", 0) == 0
 
 
 def test_release_nonexistent_returns_false(registry):
