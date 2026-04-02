@@ -62,11 +62,13 @@ def chat_completions(req: ChatRequest) -> dict[str, Any]:
 
     conversation = [{"role": m.role, "content": m.content} for m in req.messages]
     try:
-        input_ids = _tokenizer.apply_chat_template(
+        encoded = _tokenizer.apply_chat_template(
             conversation,
             return_tensors="pt",
             add_generation_prompt=True,
-        ).to(_device)
+        )
+        # transformers 5.x returns BatchEncoding; 4.x returned a bare tensor
+        input_ids = (encoded.input_ids if hasattr(encoded, "input_ids") else encoded).to(_device)
     except Exception as exc:
         raise HTTPException(500, detail=f"Tokenisation failed: {exc}")
 
@@ -113,7 +115,7 @@ def _load_model(model_path: str, gpu_id: int) -> None:
     _tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     _model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=torch.float16 if "cuda" in _device else torch.float32,
+        dtype=torch.float16 if "cuda" in _device else torch.float32,
         device_map={"": _device},
         trust_remote_code=True,
     )
