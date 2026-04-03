@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 import uvicorn
+
+logger = logging.getLogger(__name__)
 
 app = typer.Typer(name="cf-orch", help="CircuitForge GPU resource orchestrator")
 
@@ -47,14 +50,21 @@ def start(
     from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
     from circuitforge_core.resources.agent.gpu_monitor import GpuMonitor
 
+    from circuitforge_core.resources.coordinator.node_store import NodeStore
+
     lease_manager = LeaseManager()
     profile_registry = ProfileRegistry()
     service_registry = ServiceRegistry()
+    node_store = NodeStore()
     supervisor = AgentSupervisor(
         lease_manager=lease_manager,
         service_registry=service_registry,
         profile_registry=profile_registry,
+        node_store=node_store,
     )
+    restored = supervisor.restore_from_store()
+    if restored:
+        typer.echo(f"Restored {restored} known node(s) from previous session")
 
     monitor = GpuMonitor()
     gpus = monitor.poll()
@@ -119,27 +129,43 @@ def agent(
     reach_host = advertise_host or ("127.0.0.1" if host in ("0.0.0.0", "::") else host)
     agent_url = f"http://{reach_host}:{port}"
 
-    def _register_in_background() -> None:
-        """POST registration to coordinator after a short delay (uvicorn needs ~1s to bind)."""
-        import time
-        time.sleep(2.0)
-        try:
-            resp = httpx.post(
-                f"{coordinator}/api/nodes",
-                json={"node_id": node_id, "agent_url": agent_url},
-                timeout=5.0,
-            )
-            if resp.is_success:
-                typer.echo(f"Registered with coordinator at {coordinator} as '{node_id}'")
-            else:
-                typer.echo(
-                    f"Warning: coordinator registration returned {resp.status_code}", err=True
-                )
-        except Exception as exc:
-            typer.echo(f"Warning: could not reach coordinator at {coordinator}: {exc}", err=True)
+    _RECONNECT_INTERVAL_S = 30.0
 
-    # Fire registration in a daemon thread so uvicorn.run() can start blocking immediately.
-    threading.Thread(target=_register_in_background, daemon=True).start()
+    def _reconnect_loop() -> None:
+        """
+        Persistently re-register this agent with the coordinator.
+
+        Runs as a daemon thread for the lifetime of the agent process:
+        - Waits 2 s on first run (uvicorn needs time to bind)
+        - Re-registers every 30 s thereafter
+        - If the coordinator is down, silently retries — no crashing
+        - When the coordinator restarts, the agent re-appears within one cycle
+
+        This means coordinator restarts require no manual intervention on agent hosts.
+        """
+        import time
+        first = True
+        while True:
+            time.sleep(2.0 if first else _RECONNECT_INTERVAL_S)
+            first = False
+            try:
+                resp = httpx.post(
+                    f"{coordinator}/api/nodes",
+                    json={"node_id": node_id, "agent_url": agent_url},
+                    timeout=5.0,
+                )
+                if resp.is_success:
+                    logger.debug("Registered with coordinator at %s as '%s'", coordinator, node_id)
+                else:
+                    logger.warning(
+                        "Coordinator registration returned %s", resp.status_code
+                    )
+            except Exception as exc:
+                logger.debug("Coordinator at %s unreachable, will retry: %s", coordinator, exc)
+
+    # Fire reconnect loop in a daemon thread so uvicorn.run() can start blocking immediately.
+    threading.Thread(target=_reconnect_loop, daemon=True, name="cf-orch-reconnect").start()
+    typer.echo(f"Reconnect loop started — will register with {coordinator} every {int(_RECONNECT_INTERVAL_S)}s")
 
     service_manager = None
     try:
