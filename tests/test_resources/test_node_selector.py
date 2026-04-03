@@ -54,3 +54,29 @@ def test_returns_none_when_no_agents():
     registry = ProfileRegistry()
     result = select_node({}, "vllm", registry, resident_keys=set())
     assert result is None
+
+
+def test_prefers_node_that_fully_fits_service_over_one_that_does_not():
+    """can_fit requires free_mb >= service max_mb (full ceiling, not half).
+    9500 MB guarantees above all profile ceilings (max is 9000); 1000 MB is below all.
+    """
+    agents = {
+        "a": _make_agent("a", free_mb=1000),
+        "b": _make_agent("b", free_mb=9500),
+    }
+    registry = ProfileRegistry()
+    result = select_node(agents, "vllm", registry, resident_keys=set())
+    # "b" is the only node in the preferred (can_fit) pool
+    assert result == ("b", 0)
+
+
+def test_falls_back_to_best_effort_when_no_node_fully_fits():
+    """When nothing can_fit, select_node returns the best-VRAM node as fallback."""
+    agents = {
+        "a": _make_agent("a", free_mb=1000),
+        "b": _make_agent("b", free_mb=2000),
+    }
+    registry = ProfileRegistry()
+    # Neither has enough free VRAM; fallback picks highest effective_free_mb
+    result = select_node(agents, "vllm", registry, resident_keys=set())
+    assert result == ("b", 0)
