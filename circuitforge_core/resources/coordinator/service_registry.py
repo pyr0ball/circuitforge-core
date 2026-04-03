@@ -29,6 +29,7 @@ class ServiceInstance:
     model: str | None
     url: str | None
     idle_since: float | None = None
+    health_path: str = "/health"
 
 
 class ServiceRegistry:
@@ -107,6 +108,7 @@ class ServiceRegistry:
         state: Literal["starting", "running", "idle", "stopped"],
         model: str | None,
         url: str | None,
+        health_path: str = "/health",
     ) -> ServiceInstance:
         key = f"{service}:{node_id}:{gpu_id}"
         existing = self._instances.get(key)
@@ -117,6 +119,7 @@ class ServiceRegistry:
         inst = ServiceInstance(
             service=service, node_id=node_id, gpu_id=gpu_id,
             state=state, model=model, url=url, idle_since=idle_since,
+            health_path=health_path,
         )
         self._instances[key] = inst
         return inst
