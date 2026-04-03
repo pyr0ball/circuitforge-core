@@ -6,6 +6,24 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] — 2026-04-02
+
+### Added
+
+**`circuitforge_core.manage` — cross-platform product manager** (closes #6)
+
+Replaces bash-only `manage.sh` across all products. Works on Linux, macOS, and Windows natively — no WSL2 or Docker required.
+
+- **`ManageConfig`**: reads `manage.toml` from the product root (TOML via stdlib `tomllib`). Falls back to directory name when no config file is present — Docker-only products need zero configuration.
+- **Docker mode** (`DockerManager`): wraps `docker compose` (v2 plugin) or `docker-compose` (v1). Auto-detected when Docker is available and a compose file exists. Commands: `start`, `stop`, `restart`, `status`, `logs`, `build`.
+- **Native mode** (`NativeManager`): PID-file process management with `platformdirs`-based paths (`AppData` on Windows, `~/.local/share` on Linux/macOS). Cross-platform kill (SIGTERM→SIGKILL on Unix, `taskkill /F` on Windows). Log tailing via polling — no `tail -f`, works everywhere.
+- **CLI** (`typer`): `start`, `stop`, `restart`, `status`, `logs`, `build`, `open`, `install-shims`. `--mode auto|docker|native` override.
+- **`install-shims`**: writes `manage.sh` (bash, +x) and `manage.ps1` (PowerShell) into the product directory, plus `manage.toml.example`.
+- **Entry points**: `python -m circuitforge_core.manage` and `cf-manage` console script.
+- **`pyproject.toml`**: `[manage]` optional extras group (`platformdirs`, `typer`).
+
+---
+
 ## [0.4.0] — 2026-04-02
 
 ### Added
