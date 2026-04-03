@@ -1,0 +1,38 @@
+# manage.toml — CircuitForge product manager configuration
+#
+# Drop this file (renamed from manage.toml.example) in your product root.
+# Docker-only products only need [app]; native services require [[native.services]].
+
+[app]
+# Product name — used for log/PID directory names and display.
+name = "myproduct"
+
+# URL opened by `manage.py open`. Typically the frontend port.
+default_url = "http://localhost:8511"
+
+[docker]
+# Path to the Docker Compose file, relative to this directory.
+compose_file = "compose.yml"
+
+# Docker Compose project name (defaults to app.name).
+# project = "myproduct"
+
+# ── Native mode services ───────────────────────────────────────────────────────
+# Define one [[native.services]] block per process.
+# Used when Docker is unavailable (Windows without Docker, or --mode native).
+
+[[native.services]]
+name = "api"
+# Full shell command to launch the backend.
+command = "uvicorn app.main:app --host 0.0.0.0 --port 8512 --reload"
+port = 8512
+# cwd is relative to the project root. Leave empty for the project root itself.
+cwd = ""
+# Optional extra environment variables.
+# env = { PYTHONPATH = ".", DEBUG = "1" }
+
+[[native.services]]
+name = "frontend"
+command = "npm run preview -- --host 0.0.0.0 --port 8511"
+port = 8511
+cwd = "frontend"
