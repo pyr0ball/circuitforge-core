@@ -6,6 +6,28 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-04-02
+
+### Added
+
+**Agent watchdog — coordinator-restart reconnect** (closes #15)
+- `NodeStore`: SQLite persistence for known agent nodes (`~/.local/share/circuitforge/cf-orch-nodes.db`); `upsert` on every registration, `prune_stale` removes nodes unseen for 30+ days
+- `AgentSupervisor.restore_from_store()`: reloads all previously-known nodes on coordinator startup; nodes start `offline=False` and come online within one heartbeat cycle (~10 s) without touching the agent processes
+- `AgentSupervisor.register()` now persists to `NodeStore` on every call
+- Agent CLI: one-shot registration replaced with a persistent 30 s reconnect loop (daemon thread); coordinator restart → remote nodes (Navi, Strahl, etc.) reappear automatically with no manual intervention
+
+**Ollama adopt-if-running + configurable health path** (closes #16)
+- `ProcessSpec.adopt` (`bool`, default `False`): when `True`, `ServiceManager.start()` probes the health endpoint first and claims the already-running process rather than spawning a new one — designed for system daemons like Ollama
+- `ProcessSpec.health_path` (`str`, default `"/health"`): configurable health probe path; Ollama uses `/api/tags`
+- `ServiceManager._probe_health()`: shared urllib health check used by both `start()` and `is_running()` for adopt services
+- Agent `/services/{service}/start` response includes `adopted: true` when the service was claimed rather than started; coordinator sets instance state to `running` immediately (skips probe loop wait)
+- `ServiceInstance.health_path` field; `upsert_instance(health_path=)` kwarg
+- Coordinator probe loop uses `inst.health_path` instead of hardcoded `/health`
+- `_get_health_path()` helper looks up the ProcessSpec health path from the profile registry
+- All GPU profiles (2/4/6/8/16/24 GB + cpu-16/32 GB): `ollama` service now has a `managed:` block with `adopt: true`, `health_path: /api/tags`, port 11434
+
+---
+
 ## [0.3.0] — 2026-04-02
 
 ### Added
