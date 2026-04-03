@@ -1,0 +1,53 @@
+# cf-orch coordinator image
+# Includes the coordinator + agent; designed for paid+ multi-node deployments.
+#
+# Usage (coordinator node):
+#   docker run -d \
+#     -p 7700:7700 \
+#     -e HEIMDALL_URL=https://license.circuitforge.tech \
+#     -e HEIMDALL_MIN_TIER=paid \
+#     -e CF_ORCH_AUTH_SECRET=<secret> \
+#     ghcr.io/circuit-forge/cf-orch:latest coordinator
+#
+# Usage (GPU agent node — connects back to coordinator):
+#   docker run -d \
+#     --gpus all \
+#     -e CF_COORDINATOR_URL=http://<coordinator-ip>:7700 \
+#     ghcr.io/circuit-forge/cf-orch:latest agent
+#
+# Environment variables
+# ─────────────────────
+# CF_ORCH_PORT          Coordinator listen port (default: 7700)
+# HEIMDALL_URL          Enable license auth (omit for LAN-only / self-hosted)
+# HEIMDALL_MIN_TIER     Minimum tier required (default: paid)
+# CF_ORCH_AUTH_SECRET   Shared secret with Heimdall /licenses/verify
+# CF_COORDINATOR_URL    Agent mode: coordinator URL to register with
+# CF_AGENT_GPU_IDS      Comma-separated GPU indices for agent (default: 0)
+
+FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source="https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core"
+LABEL org.opencontainers.image.description="cf-orch coordinator and agent for CircuitForge multi-node GPU orchestration"
+LABEL org.opencontainers.image.licenses="BSL-1.1"
+
+WORKDIR /app
+
+# System deps — httpx needs curl for connection reuse; avoid full dev toolchain
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cf-core with the resources extra (coordinator + agent deps)
+COPY pyproject.toml README.md ./
+COPY circuitforge_core/ ./circuitforge_core/
+
+RUN pip install --no-cache-dir ".[resources,manage]"
+
+ENV CF_ORCH_PORT=7700
+EXPOSE 7700
+
+COPY docker/orch-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["coordinator"]
