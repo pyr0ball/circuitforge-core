@@ -6,6 +6,36 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-04-02
+
+### Added
+
+**Hardware module** (`circuitforge_core.hardware`) — closes #5
+- `detect_hardware()`: probes nvidia-smi / rocm-smi / Apple system_profiler / CPU fallback → `HardwareSpec`
+- `select_tier(vram_mb)`: maps physical VRAM to a named `VramTier` (CPU / 2 / 4 / 6 / 8 / 16 / 24 GB)
+- `generate_profile(spec)`: converts a `HardwareSpec` + service URLs → `LLMConfig` (llm.yaml-compatible)
+- `HardwareSpec`, `LLMBackendConfig`, `LLMConfig` dataclasses
+
+**cf-docuvision service** (`circuitforge_core.resources.docuvision`) — closes #8
+- FastAPI HTTP service wrapping ByteDance/Dolphin-v2 (Qwen2.5-VL backbone, ~8 GB VRAM)
+- `POST /extract`: accepts `image_b64` or `image_path` + `hint` (auto / table / text / form) → `ExtractResponse`
+- Lazy model loading — model stays unloaded until first request
+- JSON-structured output with 21 element types; plain-text fallback when model returns unstructured output
+- `ProcessSpec` managed blocks wired into all four GPU profiles (6 / 8 / 16 / 24 GB)
+- `--gpu-id` flag respected via `CUDA_VISIBLE_DEVICES`
+
+**Documents module** (`circuitforge_core.documents`) — closes #7
+- `ingest(image_bytes, hint) → StructuredDocument` — single call for all consumers
+- Primary path: cf-docuvision HTTP service; automatic fallback to `LLMRouter` vision; graceful empty doc on total failure
+- `StructuredDocument`, `Element`, `ParsedTable` frozen dataclasses with `.headings` / `.paragraphs` convenience properties
+- `CF_DOCUVISION_URL` env var for service URL override
+- `DocuvisionClient`: reusable HTTP client for cf-docuvision with `is_healthy()` probe
+
+**Coordinator probe loop tests** — closes #13
+- 4 async tests for `_run_instance_probe_loop`: healthy transition, timeout eviction, state cleanup, no-URL guard
+
+---
+
 ## [0.2.0] — 2026-04-02
 
 ### Added
