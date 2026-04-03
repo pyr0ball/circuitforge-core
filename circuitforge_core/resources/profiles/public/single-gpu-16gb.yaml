@@ -27,6 +27,13 @@ services:
     priority: 2
     shared: true
     max_concurrent: 3
+    managed:
+      type: process
+      exec_path: "/devl/miniconda3/envs/cf/bin/python"
+      args_template: "-m circuitforge_core.resources.docuvision.app --model /Library/Assets/LLM/docuvision/models/dolphin-v2 --port {port} --gpu-id {gpu_id}"
+      port: 8003
+      host_port: 8003
+      cwd: "/Library/Development/CircuitForge/circuitforge-core"
   cf-stt:
     max_mb: 1200
     priority: 2
