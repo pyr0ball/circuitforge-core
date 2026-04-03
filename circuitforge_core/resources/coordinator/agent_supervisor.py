@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
+from circuitforge_core.resources.coordinator.node_store import NodeStore
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
 from circuitforge_core.resources.models import GpuInfo, NodeInfo, ResidentAllocation
@@ -33,13 +34,37 @@ class AgentSupervisor:
         lease_manager: LeaseManager,
         service_registry: ServiceRegistry | None = None,
         profile_registry: ProfileRegistry | None = None,
+        node_store: NodeStore | None = None,
     ) -> None:
         self._agents: dict[str, AgentRecord] = {}
         self._lease_manager = lease_manager
         self._running = False
         self._service_registry = service_registry
         self._profile_registry = profile_registry
+        self._node_store = node_store
         self._heartbeat_tick = 0
+
+    def restore_from_store(self) -> int:
+        """
+        Load previously-known nodes from NodeStore into the in-memory registry.
+
+        All restored nodes start as offline=False. The heartbeat loop will poll
+        them on its first tick and promote any that respond to online=True.
+
+        Returns the number of nodes restored.
+        """
+        if self._node_store is None:
+            return 0
+        restored = 0
+        for node_id, agent_url in self._node_store.all():
+            if node_id not in self._agents:
+                self._agents[node_id] = AgentRecord(
+                    node_id=node_id, agent_url=agent_url, online=False
+                )
+                restored += 1
+        if restored:
+            logger.info("NodeStore: restored %d known node(s) from previous session", restored)
+        return restored
 
     def register(self, node_id: str, agent_url: str) -> None:
         if node_id not in self._agents:
@@ -49,6 +74,8 @@ class AgentSupervisor:
             if self._agents[node_id].agent_url != agent_url:
                 self._agents[node_id].agent_url = agent_url
                 logger.info("Updated agent URL for %s → %s", node_id, agent_url)
+        if self._node_store is not None:
+            self._node_store.upsert(node_id, agent_url)
 
     def get_node_info(self, node_id: str) -> NodeInfo | None:
         record = self._agents.get(node_id)

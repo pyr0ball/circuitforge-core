@@ -34,6 +34,11 @@ class ProcessSpec(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     port: int = 0
     host_port: int = 0
+    # adopt=True: if the service is already listening on host_port, claim it rather
+    # than spawning a new process (useful for system daemons like Ollama).
+    adopt: bool = False
+    # Override the health probe path; defaults to /health (Ollama uses /api/tags).
+    health_path: str = "/health"
 
     model_config = {"frozen": True}
 

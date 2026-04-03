@@ -86,8 +86,12 @@ def create_agent_app(
         @app.post("/services/{service}/start")
         def start_service(service: str, req: ServiceStartRequest) -> dict:
             try:
+                already_running = service_manager.is_running(service)
                 url = service_manager.start(service, req.gpu_id, req.params)
-                return {"service": service, "url": url, "running": True}
+                # adopted=True signals the coordinator to treat this instance as
+                # immediately running rather than waiting for the probe loop.
+                adopted = already_running and service_manager.is_running(service)
+                return {"service": service, "url": url, "running": True, "adopted": adopted}
             except (ValueError, NotImplementedError) as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
             except Exception as exc:

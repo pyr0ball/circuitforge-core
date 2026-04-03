@@ -67,6 +67,10 @@ class ServiceManager:
             except subprocess.CalledProcessError:
                 return False
         if isinstance(spec, ProcessSpec):
+            # For adopt=True services, check the health endpoint regardless of whether
+            # we spawned the process (it may be a system daemon we didn't start).
+            if spec.adopt:
+                return self._probe_health(spec.host_port, spec.health_path)
             proc = self._procs.get(service)
             if proc is None or proc.poll() is not None:
                 return False
@@ -77,6 +81,16 @@ class ServiceManager:
             except OSError:
                 return False
         return False
+
+    def _probe_health(self, port: int, health_path: str = "/health") -> bool:
+        """Return True if the service at localhost:port responds 200 on health_path."""
+        import urllib.request
+        try:
+            url = f"http://127.0.0.1:{port}{health_path}"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
 
     def start(self, service: str, gpu_id: int, params: dict[str, str]) -> str:
         spec = self._get_spec(service)
@@ -111,7 +125,10 @@ class ServiceManager:
             return f"http://{self.advertise_host}:{spec.host_port}"
 
         if isinstance(spec, ProcessSpec):
-            import shlex
+            # adopt=True: if the service is already healthy, claim it without spawning.
+            if spec.adopt and self._probe_health(spec.host_port, spec.health_path):
+                return f"http://{self.advertise_host}:{spec.host_port}"
+
             import subprocess as _sp
 
             filler = defaultdict(str, params)

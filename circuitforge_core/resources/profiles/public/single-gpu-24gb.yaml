@@ -17,6 +17,14 @@ services:
   ollama:
     max_mb: 18432
     priority: 1
+    managed:
+      type: process
+      adopt: true
+      exec_path: "/usr/local/bin/ollama"
+      args_template: "serve"
+      port: 11434
+      host_port: 11434
+      health_path: /api/tags
   cf-vision:
     max_mb: 4096
     priority: 2

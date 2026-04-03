@@ -19,8 +19,18 @@ from circuitforge_core.resources.coordinator.lease_manager import LeaseManager
 from circuitforge_core.resources.coordinator.node_selector import select_node
 from circuitforge_core.resources.coordinator.profile_registry import ProfileRegistry
 from circuitforge_core.resources.coordinator.service_registry import ServiceRegistry
+from circuitforge_core.resources.profiles.schema import ProcessSpec
 
 _DASHBOARD_HTML = (Path(__file__).parent / "dashboard.html").read_text()
+
+
+def _get_health_path(profile_registry: ProfileRegistry, service: str) -> str:
+    """Return the health_path for a service from the first matching profile spec."""
+    for profile in profile_registry.list_public():
+        svc = profile.services.get(service)
+        if svc and isinstance(svc.managed, ProcessSpec):
+            return svc.managed.health_path
+    return "/health"
 
 _PROBE_INTERVAL_S = 5.0    # how often to poll starting instances
 _PROBE_TIMEOUT_S = 300.0   # give up and mark stopped after this many seconds
@@ -49,7 +59,7 @@ async def _run_instance_probe_loop(service_registry: ServiceRegistry) -> None:
             if inst.url:
                 try:
                     with urllib.request.urlopen(
-                        inst.url.rstrip("/") + "/health", timeout=2.0
+                        inst.url.rstrip("/") + inst.health_path, timeout=2.0
                     ) as resp:
                         healthy = resp.status == 200
                 except Exception:
@@ -381,8 +391,11 @@ def create_coordinator_app(
                             url=svc_url,
                             ttl_s=req.ttl_s,
                         )
-                        # Seed the instance state for first-time starts
-                        instance_state = "running" if warm else "starting"
+                        # Seed the instance state for first-time starts.
+                        # adopted=True means the agent found it already running.
+                        adopted = data.get("adopted", False)
+                        instance_state = "running" if (warm or adopted) else "starting"
+                        health_path = _get_health_path(profile_registry, service)
                         service_registry.upsert_instance(
                             service=service,
                             node_id=node_id,
@@ -390,6 +403,7 @@ def create_coordinator_app(
                             state=instance_state,
                             model=model,
                             url=svc_url,
+                            health_path=health_path,
                         )
                         return {
                             "allocation_id": alloc.allocation_id,
