@@ -73,3 +73,47 @@ class TestSetPath:
         prefs = set_path(prefs, "affiliate.byok_ids.ebay", "tag-123")
         assert get_path(prefs, "affiliate.opt_out") is True
         assert get_path(prefs, "affiliate.byok_ids.ebay") == "tag-123"
+
+
+import os
+import tempfile
+from pathlib import Path
+from circuitforge_core.preferences.store import LocalFileStore
+
+
+class TestLocalFileStore:
+    def _store(self, tmp_path) -> LocalFileStore:
+        return LocalFileStore(prefs_path=tmp_path / "preferences.yaml")
+
+    def test_get_returns_default_when_file_missing(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store.get(user_id=None, path="affiliate.opt_out", default=False) is False
+
+    def test_set_then_get_roundtrip(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path="affiliate.opt_out", value=True)
+        assert store.get(user_id=None, path="affiliate.opt_out", default=False) is True
+
+    def test_set_nested_path(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path="affiliate.byok_ids.ebay", value="my-tag")
+        assert store.get(user_id=None, path="affiliate.byok_ids.ebay") == "my-tag"
+
+    def test_set_preserves_sibling_keys(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path="affiliate.opt_out", value=False)
+        store.set(user_id=None, path="affiliate.byok_ids.ebay", value="tag")
+        assert store.get(user_id=None, path="affiliate.opt_out") is False
+        assert store.get(user_id=None, path="affiliate.byok_ids.ebay") == "tag"
+
+    def test_creates_parent_dirs(self, tmp_path):
+        deep_path = tmp_path / "deep" / "nested" / "preferences.yaml"
+        store = LocalFileStore(prefs_path=deep_path)
+        store.set(user_id=None, path="x", value=1)
+        assert deep_path.exists()
+
+    def test_user_id_ignored_for_local_store(self, tmp_path):
+        """LocalFileStore is single-user; user_id is accepted but ignored."""
+        store = self._store(tmp_path)
+        store.set(user_id="u123", path="affiliate.opt_out", value=True)
+        assert store.get(user_id="u456", path="affiliate.opt_out", default=False) is True
