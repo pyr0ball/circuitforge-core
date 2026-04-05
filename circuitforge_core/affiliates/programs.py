@@ -56,6 +56,12 @@ def _build_ebay_url(url: str, affiliate_id: str) -> str:
     return f"{url}{sep}{params}"
 
 
+def _build_instacart_url(url: str, affiliate_id: str) -> str:
+    """Append Instacart affiliate parameter to a search URL."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}aff={affiliate_id}"
+
+
 def _build_amazon_url(url: str, affiliate_id: str) -> str:
     """Merge an Amazon Associates tag into a product URL's query string."""
     parsed = urlparse(url)
@@ -100,4 +106,11 @@ register_program(AffiliateProgram(
     retailer_key="amazon",
     env_var="AMAZON_ASSOCIATES_TAG",
     build_url=_build_amazon_url,
+))
+
+register_program(AffiliateProgram(
+    name="Instacart",
+    retailer_key="instacart",
+    env_var="INSTACART_AFFILIATE_ID",
+    build_url=_build_instacart_url,
 ))
