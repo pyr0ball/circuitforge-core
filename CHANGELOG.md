@@ -6,6 +6,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.7.0] — 2026-04-04
+
+### Added
+
+**`circuitforge_core.affiliates`** — affiliate link wrapping module (closes #21)
+- `wrap_url(url, retailer, user_id, get_preference)` — resolution order: opt-out → BYOK → CF env var → plain URL
+- `AffiliateProgram` frozen dataclass + `register_program()` / `get_program()` registry
+- Built-in programs: eBay Partner Network (`EBAY_AFFILIATE_CAMPAIGN_ID`), Amazon Associates (`AMAZON_ASSOCIATES_TAG`)
+- `get_disclosure_text(retailer)` — per-retailer tooltip copy + `BANNER_COPY` first-encounter constants
+- `get_preference` callable injection for opt-out + BYOK without hard-wiring a storage backend
+
+**`circuitforge_core.preferences`** — preference persistence helpers (closes #22 self-hosted path)
+- `LocalFileStore` — YAML-backed single-user preference store (`~/.config/circuitforge/preferences.yaml`)
+- `get_user_preference(user_id, path, default, store)` + `set_user_preference(user_id, path, value, store)`
+- `PreferenceStore` protocol — Heimdall cloud backend to follow once Heimdall#5 lands
+- Dot-path utilities `get_path` / `set_path` (immutable nested dict read/write)
+
+---
+
 ## [0.5.0] — 2026-04-02
 
 ### Added
