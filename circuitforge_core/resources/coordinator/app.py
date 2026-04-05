@@ -133,6 +133,14 @@ def create_coordinator_app(
 
     app = FastAPI(title="cf-orch-coordinator", lifespan=_lifespan)
 
+    # Optional Heimdall auth — enabled when HEIMDALL_URL env var is set.
+    # Self-hosted coordinators skip this entirely; the CF-hosted public endpoint
+    # (orch.circuitforge.tech) sets HEIMDALL_URL to gate paid+ access.
+    from circuitforge_core.resources.coordinator.auth import HeimdallAuthMiddleware
+    _auth = HeimdallAuthMiddleware.from_env()
+    if _auth is not None:
+        app.middleware("http")(_auth)
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def dashboard() -> HTMLResponse:
         return HTMLResponse(content=_DASHBOARD_HTML)

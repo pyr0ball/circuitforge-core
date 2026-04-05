@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager, asynccontextmanager
 from dataclasses import dataclass
 
@@ -34,13 +35,25 @@ class CFOrchClient:
         async with client.allocate_async("vllm", model_candidates=["Ouro-1.4B"]) as alloc:
             ...
 
+    Authentication:
+        Pass api_key explicitly, or set CF_LICENSE_KEY env var. When set, every
+        request carries Authorization: Bearer <key>. Required for the hosted
+        CircuitForge coordinator (orch.circuitforge.tech); optional for local
+        self-hosted coordinators.
+
     Raises ValueError immediately if coordinator_url is empty.
     """
 
-    def __init__(self, coordinator_url: str) -> None:
+    def __init__(self, coordinator_url: str, api_key: str | None = None) -> None:
         if not coordinator_url:
             raise ValueError("coordinator_url is empty — cf-orch not configured")
         self._url = coordinator_url.rstrip("/")
+        self._api_key = api_key or os.environ.get("CF_LICENSE_KEY", "")
+
+    def _headers(self) -> dict[str, str]:
+        if self._api_key:
+            return {"Authorization": f"Bearer {self._api_key}"}
+        return {}
 
     def _build_body(self, model_candidates: list[str] | None, ttl_s: float, caller: str) -> dict:
         return {
@@ -74,6 +87,7 @@ class CFOrchClient:
         resp = httpx.post(
             f"{self._url}/api/services/{service}/allocate",
             json=self._build_body(model_candidates, ttl_s, caller),
+            headers=self._headers(),
             timeout=120.0,
         )
         if not resp.is_success:
@@ -88,6 +102,7 @@ class CFOrchClient:
             try:
                 httpx.delete(
                     f"{self._url}/api/services/{service}/allocations/{alloc.allocation_id}",
+                    headers=self._headers(),
                     timeout=10.0,
                 )
             except Exception as exc:
@@ -107,6 +122,7 @@ class CFOrchClient:
             resp = await client.post(
                 f"{self._url}/api/services/{service}/allocate",
                 json=self._build_body(model_candidates, ttl_s, caller),
+                headers=self._headers(),
             )
             if not resp.is_success:
                 raise RuntimeError(
@@ -120,6 +136,7 @@ class CFOrchClient:
                 try:
                     await client.delete(
                         f"{self._url}/api/services/{service}/allocations/{alloc.allocation_id}",
+                        headers=self._headers(),
                         timeout=10.0,
                     )
                 except Exception as exc:

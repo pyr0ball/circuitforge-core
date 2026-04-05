@@ -17,13 +17,80 @@ CONFIG_PATH = Path.home() / ".config" / "circuitforge" / "llm.yaml"
 
 class LLMRouter:
     def __init__(self, config_path: Path = CONFIG_PATH):
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"{config_path} not found. "
-                "Copy the llm.yaml.example to ~/.config/circuitforge/llm.yaml and configure your LLM backends."
+        if config_path.exists():
+            with open(config_path) as f:
+                self.config = yaml.safe_load(f)
+        else:
+            env_config = self._auto_config_from_env()
+            if env_config is None:
+                raise FileNotFoundError(
+                    f"{config_path} not found and no LLM env vars detected. "
+                    "Either copy llm.yaml.example to ~/.config/circuitforge/llm.yaml, "
+                    "or set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OLLAMA_HOST."
+                )
+            logger.info(
+                "[LLMRouter] No llm.yaml found — using env-var auto-config "
+                "(backends: %s)", ", ".join(env_config["fallback_order"])
             )
-        with open(config_path) as f:
-            self.config = yaml.safe_load(f)
+            self.config = env_config
+
+    @staticmethod
+    def _auto_config_from_env() -> dict | None:
+        """Build a minimal LLM config from well-known environment variables.
+
+        Priority order (highest to lowest):
+          1. ANTHROPIC_API_KEY  → anthropic backend
+          2. OPENAI_API_KEY     → openai-compat → api.openai.com (or OPENAI_BASE_URL)
+          3. OLLAMA_HOST        → openai-compat → local Ollama (always included as last resort)
+
+        Returns None only when none of these are set and Ollama is not configured,
+        so the caller can decide whether to raise or surface a user-facing message.
+        """
+        backends: dict = {}
+        fallback_order: list[str] = []
+
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            backends["anthropic"] = {
+                "type": "anthropic",
+                "enabled": True,
+                "model": os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"),
+                "api_key_env": "ANTHROPIC_API_KEY",
+                "supports_images": True,
+            }
+            fallback_order.append("anthropic")
+
+        if os.environ.get("OPENAI_API_KEY"):
+            backends["openai"] = {
+                "type": "openai_compat",
+                "enabled": True,
+                "base_url": os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                "api_key": os.environ.get("OPENAI_API_KEY"),
+                "supports_images": True,
+            }
+            fallback_order.append("openai")
+
+        # Ollama — always added when any config exists, as the lowest-cost local fallback.
+        # Unreachable Ollama is harmless — _is_reachable() skips it gracefully.
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        if not ollama_host.startswith("http"):
+            ollama_host = f"http://{ollama_host}"
+        backends["ollama"] = {
+            "type": "openai_compat",
+            "enabled": True,
+            "base_url": ollama_host.rstrip("/") + "/v1",
+            "model": os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
+            "api_key": "any",
+            "supports_images": False,
+        }
+        fallback_order.append("ollama")
+
+        # Return None if only ollama is in the list AND no explicit host was set —
+        # that means the user set nothing at all, not even OLLAMA_HOST.
+        if fallback_order == ["ollama"] and "OLLAMA_HOST" not in os.environ:
+            return None
+
+        return {"backends": backends, "fallback_order": fallback_order}
 
     def _is_reachable(self, base_url: str) -> bool:
         """Quick health-check ping. Returns True if backend is up."""
