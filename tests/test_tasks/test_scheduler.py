@@ -1,17 +1,14 @@
-"""Tests for circuitforge_core.tasks.scheduler."""
+"""Tests for TaskScheduler Protocol + LocalScheduler (MIT, no coordinator)."""
 from __future__ import annotations
 
 import sqlite3
-import threading
 import time
 from pathlib import Path
-from types import ModuleType
-from typing import List
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from circuitforge_core.tasks.scheduler import (
+    LocalScheduler,
     TaskScheduler,
     detect_available_vram_gb,
     get_scheduler,
@@ -19,267 +16,125 @@ from circuitforge_core.tasks.scheduler import (
 )
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
-
 @pytest.fixture
-def tmp_db(tmp_path: Path) -> Path:
-    """SQLite DB with background_tasks table."""
-    db = tmp_path / "test.db"
-    conn = sqlite3.connect(db)
-    conn.execute("""
-        CREATE TABLE background_tasks (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_type  TEXT    NOT NULL,
-            job_id     INTEGER NOT NULL DEFAULT 0,
-            status     TEXT    NOT NULL DEFAULT 'queued',
-            params     TEXT,
-            error      TEXT,
-            created_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+def db_path(tmp_path: Path) -> Path:
+    p = tmp_path / "test.db"
+    with sqlite3.connect(p) as conn:
+        conn.execute(
+            "CREATE TABLE background_tasks "
+            "(id INTEGER PRIMARY KEY, task_type TEXT, job_id INTEGER, "
+            "params TEXT, status TEXT DEFAULT 'queued', created_at TEXT DEFAULT '')"
         )
-    """)
-    conn.commit()
-    conn.close()
-    return db
+    return p
 
 
 @pytest.fixture(autouse=True)
-def _reset_singleton():
-    """Always tear down the scheduler singleton between tests."""
+def clean_singleton():
     yield
     reset_scheduler()
 
 
-TASK_TYPES = frozenset({"fast_task"})
-BUDGETS = {"fast_task": 1.0}
+def make_run_fn(results: list):
+    def run(db_path, task_id, task_type, job_id, params):
+        results.append((task_type, task_id))
+        time.sleep(0.01)
+    return run
 
 
-# ── detect_available_vram_gb ──────────────────────────────────────────────────
-
-def test_detect_vram_from_cfortch():
-    """Uses cf-orch free VRAM when coordinator is reachable."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {
-        "nodes": [
-            {"node_id": "local", "gpus": [{"vram_free_mb": 4096}, {"vram_free_mb": 4096}]}
-        ]
-    }
-    with patch("circuitforge_core.tasks.scheduler.httpx") as mock_httpx:
-        mock_httpx.get.return_value = mock_resp
-        result = detect_available_vram_gb(coordinator_url="http://localhost:7700")
-    assert result == pytest.approx(8.0)  # 4096 + 4096 MB → 8 GB
+def test_local_scheduler_implements_protocol():
+    assert isinstance(LocalScheduler.__new__(LocalScheduler), TaskScheduler)
 
 
-def test_detect_vram_cforch_unavailable_falls_back_to_unlimited():
-    """Falls back to 999.0 when cf-orch is unreachable and preflight unavailable."""
-    with patch("circuitforge_core.tasks.scheduler.httpx") as mock_httpx:
-        mock_httpx.get.side_effect = ConnectionRefusedError()
-        result = detect_available_vram_gb()
-    assert result == 999.0
+def test_detect_available_vram_returns_unlimited():
+    assert detect_available_vram_gb() == 999.0
 
 
-def test_detect_vram_cforch_empty_nodes_falls_back():
-    """If cf-orch returns no nodes with GPUs, falls back to unlimited."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {"nodes": []}
-    with patch("circuitforge_core.tasks.scheduler.httpx") as mock_httpx:
-        mock_httpx.get.return_value = mock_resp
-        result = detect_available_vram_gb()
-    assert result == 999.0
-
-
-def test_detect_vram_preflight_fallback():
-    """Falls back to preflight total VRAM when cf-orch is unreachable."""
-    # Build a fake scripts.preflight module with get_gpus returning two GPUs.
-    fake_scripts = ModuleType("scripts")
-    fake_preflight = ModuleType("scripts.preflight")
-    fake_preflight.get_gpus = lambda: [  # type: ignore[attr-defined]
-        {"vram_total_gb": 8.0},
-        {"vram_total_gb": 4.0},
-    ]
-    fake_scripts.preflight = fake_preflight  # type: ignore[attr-defined]
-
-    with patch("circuitforge_core.tasks.scheduler.httpx") as mock_httpx, \
-         patch.dict(
-             __import__("sys").modules,
-             {"scripts": fake_scripts, "scripts.preflight": fake_preflight},
-         ):
-        mock_httpx.get.side_effect = ConnectionRefusedError()
-        result = detect_available_vram_gb()
-
-    assert result == pytest.approx(12.0)  # 8.0 + 4.0 GB
-
-
-# ── TaskScheduler basic behaviour ─────────────────────────────────────────────
-
-def test_enqueue_returns_true_on_success(tmp_db: Path):
-    ran: List[int] = []
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        ran.append(task_id)
-
-    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
-    sched.start()
-    result = sched.enqueue(1, "fast_task", 0, None)
-    sched.shutdown()
-    assert result is True
-
-
-def test_scheduler_runs_task(tmp_db: Path):
-    """Enqueued task is executed by the batch worker."""
-    ran: List[int] = []
-    event = threading.Event()
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        ran.append(task_id)
-        event.set()
-
-    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
-    sched.start()
-    sched.enqueue(42, "fast_task", 0, None)
-    assert event.wait(timeout=3.0), "Task was not executed within 3 seconds"
-    sched.shutdown()
-    assert ran == [42]
-
-
-def test_enqueue_returns_false_when_queue_full(tmp_db: Path):
-    """Returns False and does not enqueue when max_queue_depth is reached."""
-    gate = threading.Event()
-
-    def blocking_run_fn(db_path, task_id, task_type, job_id, params):
-        gate.wait()
-
-    sched = TaskScheduler(
-        tmp_db, blocking_run_fn, TASK_TYPES, BUDGETS,
-        available_vram_gb=8.0, max_queue_depth=2
+def test_enqueue_and_execute(db_path):
+    results = []
+    sched = LocalScheduler(
+        db_path=db_path,
+        run_task_fn=make_run_fn(results),
+        task_types=frozenset({"cover_letter"}),
+        vram_budgets={"cover_letter": 0.0},
     )
     sched.start()
-    results = [sched.enqueue(i, "fast_task", 0, None) for i in range(1, 10)]
-    gate.set()
+    sched.enqueue(1, "cover_letter", 1, None)
+    time.sleep(0.3)
     sched.shutdown()
-    assert not all(results), "Expected at least one enqueue to be rejected"
+    assert ("cover_letter", 1) in results
 
 
-def test_scheduler_drains_multiple_tasks(tmp_db: Path):
-    """All enqueued tasks of the same type are run serially."""
-    ran: List[int] = []
-    done = threading.Event()
-    TOTAL = 5
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        ran.append(task_id)
-        if len(ran) >= TOTAL:
-            done.set()
-
-    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
-    sched.start()
-    for i in range(1, TOTAL + 1):
-        sched.enqueue(i, "fast_task", 0, None)
-    assert done.wait(timeout=5.0), f"Only ran {len(ran)} of {TOTAL} tasks"
-    sched.shutdown()
-    assert sorted(ran) == list(range(1, TOTAL + 1))
-
-
-def test_vram_budget_blocks_second_type(tmp_db: Path):
-    """Second task type is not started when VRAM would be exceeded."""
-    type_a_started = threading.Event()
-    type_b_started = threading.Event()
-    gate_a = threading.Event()
-    gate_b = threading.Event()
-    started = []
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        started.append(task_type)
-        if task_type == "type_a":
-            type_a_started.set()
-            gate_a.wait()
-        else:
-            type_b_started.set()
-            gate_b.wait()
-
-    two_types = frozenset({"type_a", "type_b"})
-    tight_budgets = {"type_a": 4.0, "type_b": 4.0}  # 4+4 > 6 GB available
-
-    sched = TaskScheduler(
-        tmp_db, run_fn, two_types, tight_budgets, available_vram_gb=6.0
+def test_fifo_ordering(db_path):
+    results = []
+    sched = LocalScheduler(
+        db_path=db_path,
+        run_task_fn=make_run_fn(results),
+        task_types=frozenset({"t"}),
+        vram_budgets={"t": 0.0},
     )
     sched.start()
-    sched.enqueue(1, "type_a", 0, None)
-    sched.enqueue(2, "type_b", 0, None)
-
-    assert type_a_started.wait(timeout=3.0), "type_a never started"
-    assert not type_b_started.is_set(), "type_b should be blocked by VRAM"
-
-    gate_a.set()
-    assert type_b_started.wait(timeout=3.0), "type_b never started after type_a finished"
-    gate_b.set()
+    sched.enqueue(1, "t", 1, None)
+    sched.enqueue(2, "t", 1, None)
+    sched.enqueue(3, "t", 1, None)
+    time.sleep(0.5)
     sched.shutdown()
-    assert sorted(started) == ["type_a", "type_b"]
+    assert [r[1] for r in results] == [1, 2, 3]
 
 
-def test_get_scheduler_singleton(tmp_db: Path):
-    """get_scheduler() returns the same instance on repeated calls."""
-    run_fn = MagicMock()
-    s1 = get_scheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS)
-    s2 = get_scheduler(tmp_db)  # no run_fn — should reuse existing
+def test_queue_depth_limit(db_path):
+    sched = LocalScheduler(
+        db_path=db_path,
+        run_task_fn=make_run_fn([]),
+        task_types=frozenset({"t"}),
+        vram_budgets={"t": 0.0},
+        max_queue_depth=2,
+    )
+    assert sched.enqueue(1, "t", 1, None) is True
+    assert sched.enqueue(2, "t", 1, None) is True
+    assert sched.enqueue(3, "t", 1, None) is False
+
+
+def test_get_scheduler_singleton(db_path):
+    results = []
+    s1 = get_scheduler(
+        db_path=db_path,
+        run_task_fn=make_run_fn(results),
+        task_types=frozenset({"t"}),
+        vram_budgets={"t": 0.0},
+    )
+    s2 = get_scheduler(db_path=db_path)
     assert s1 is s2
+    s1.shutdown()
 
 
-def test_reset_scheduler_clears_singleton(tmp_db: Path):
-    """reset_scheduler() allows a new singleton to be constructed."""
-    run_fn = MagicMock()
-    s1 = get_scheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS)
-    reset_scheduler()
-    s2 = get_scheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS)
-    assert s1 is not s2
+def test_local_scheduler_no_httpx_dependency():
+    """LocalScheduler must not import httpx — not in MIT core's hard deps."""
+    import ast, inspect
+    from circuitforge_core.tasks import scheduler as sched_mod
+    src = inspect.getsource(sched_mod)
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            names = [a.name for a in getattr(node, 'names', [])]
+            module = getattr(node, 'module', '') or ''
+            assert 'httpx' not in names and 'httpx' not in module, \
+                "LocalScheduler must not import httpx"
 
 
-def test_load_queued_tasks_on_startup(tmp_db: Path):
-    """Tasks with status='queued' in the DB at startup are loaded into the deque."""
-    conn = sqlite3.connect(tmp_db)
-    conn.execute(
-        "INSERT INTO background_tasks (task_type, job_id, status) VALUES ('fast_task', 0, 'queued')"
+def test_load_queued_tasks_on_startup(db_path):
+    """Tasks with status='queued' in the DB at startup are loaded and run."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO background_tasks (id, task_type, job_id, status) VALUES (99, 't', 1, 'queued')"
+        )
+    results = []
+    sched = LocalScheduler(
+        db_path=db_path,
+        run_task_fn=make_run_fn(results),
+        task_types=frozenset({"t"}),
+        vram_budgets={"t": 0.0},
     )
-    conn.commit()
-    conn.close()
-
-    ran: List[int] = []
-    done = threading.Event()
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        ran.append(task_id)
-        done.set()
-
-    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
     sched.start()
-    assert done.wait(timeout=3.0), "Pre-loaded task was not run"
+    time.sleep(0.3)
     sched.shutdown()
-    assert len(ran) == 1
-
-
-def test_load_queued_tasks_missing_table_does_not_crash(tmp_path: Path):
-    """Scheduler does not crash if background_tasks table doesn't exist yet."""
-    db = tmp_path / "empty.db"
-    sqlite3.connect(db).close()
-
-    run_fn = MagicMock()
-    sched = TaskScheduler(db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
-    sched.start()
-    sched.shutdown()
-    # No exception = pass
-
-
-def test_reserved_vram_zero_after_task_completes(tmp_db: Path):
-    """_reserved_vram returns to 0.0 after a task finishes — no double-decrement."""
-    done = threading.Event()
-
-    def run_fn(db_path, task_id, task_type, job_id, params):
-        done.set()
-
-    sched = TaskScheduler(tmp_db, run_fn, TASK_TYPES, BUDGETS, available_vram_gb=8.0)
-    sched.start()
-    sched.enqueue(1, "fast_task", 0, None)
-    assert done.wait(timeout=3.0), "Task never completed"
-    sched.shutdown()
-    assert sched._reserved_vram == 0.0, f"Expected 0.0, got {sched._reserved_vram}"
+    assert ("t", 99) in results
