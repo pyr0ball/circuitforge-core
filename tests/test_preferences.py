@@ -117,3 +117,32 @@ class TestLocalFileStore:
         store = self._store(tmp_path)
         store.set(user_id="u123", path="affiliate.opt_out", value=True)
         assert store.get(user_id="u456", path="affiliate.opt_out", default=False) is True
+
+
+from circuitforge_core.preferences import get_user_preference, set_user_preference
+
+
+class TestPreferenceHelpers:
+    def _store(self, tmp_path) -> LocalFileStore:
+        return LocalFileStore(prefs_path=tmp_path / "preferences.yaml")
+
+    def test_get_returns_default_when_unset(self, tmp_path):
+        store = self._store(tmp_path)
+        result = get_user_preference(user_id=None, path="affiliate.opt_out",
+                                     default=False, store=store)
+        assert result is False
+
+    def test_set_then_get(self, tmp_path):
+        store = self._store(tmp_path)
+        set_user_preference(user_id=None, path="affiliate.opt_out", value=True, store=store)
+        result = get_user_preference(user_id=None, path="affiliate.opt_out",
+                                     default=False, store=store)
+        assert result is True
+
+    def test_default_store_is_local(self, tmp_path, monkeypatch):
+        """When no store is passed, helpers use LocalFileStore at default path."""
+        from circuitforge_core.preferences import store as store_module
+        local = self._store(tmp_path)
+        monkeypatch.setattr(store_module, "_DEFAULT_STORE", local)
+        set_user_preference(user_id=None, path="x.y", value=42)
+        assert get_user_preference(user_id=None, path="x.y") == 42

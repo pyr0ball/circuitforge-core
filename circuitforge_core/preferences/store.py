@@ -73,3 +73,6 @@ class LocalFileStore:
 
     def set(self, user_id: str | None, path: str, value: Any) -> None:  # noqa: ARG002
         self._save(set_path(self._load(), path, value))
+
+
+_DEFAULT_STORE: PreferenceStore = LocalFileStore()
