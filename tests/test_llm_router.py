@@ -77,3 +77,12 @@ def test_complete_raises_when_all_backends_exhausted():
     with patch.object(router, "_is_reachable", return_value=False):
         with pytest.raises(RuntimeError, match="exhausted"):
             router.complete("test")
+
+
+def test_try_cf_orch_alloc_import_path():
+    """Verify lazy import points to circuitforge_orch, not circuitforge_core.resources."""
+    import inspect
+    from circuitforge_core.llm import router as router_module
+    src = inspect.getsource(router_module.LLMRouter._try_cf_orch_alloc)
+    assert "circuitforge_orch.client" in src
+    assert "circuitforge_core.resources.client" not in src

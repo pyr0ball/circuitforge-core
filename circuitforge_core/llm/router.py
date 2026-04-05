@@ -123,7 +123,7 @@ class LLMRouter:
         if not orch_url:
             return None
         try:
-            from circuitforge_core.resources.client import CFOrchClient
+            from circuitforge_orch.client import CFOrchClient
             client = CFOrchClient(orch_url)
             service = orch_cfg.get("service", "vllm")
             candidates = orch_cfg.get("model_candidates", [])
