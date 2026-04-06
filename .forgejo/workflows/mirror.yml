@@ -15,6 +15,7 @@ jobs:
           fetch-depth: 0
 
       - name: Mirror to GitHub
+        continue-on-error: true
         env:
           GITHUB_MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
         run: |
@@ -22,6 +23,7 @@ jobs:
           git push github --mirror
 
       - name: Mirror to Codeberg
+        continue-on-error: true
         env:
           CODEBERG_MIRROR_TOKEN: ${{ secrets.CODEBERG_MIRROR_TOKEN }}
         run: |
