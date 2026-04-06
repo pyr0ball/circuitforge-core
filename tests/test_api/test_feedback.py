@@ -131,12 +131,12 @@ def test_post_success_returns_issue_number_and_url(monkeypatch):
 
     # requests.post is called multiple times: once per new label, then once for the issue.
     # We use side_effect to distinguish label creation calls from the issue creation call.
-    post_calls = []
+    issue_call_kwargs: list[dict] = []
 
     def post_side_effect(url, **kwargs):
-        post_calls.append(url)
         if "/labels" in url:
             return mock_post_label
+        issue_call_kwargs.append(kwargs)
         return mock_post_issue
 
     client = _make_client()
@@ -148,6 +148,35 @@ def test_post_success_returns_issue_number_and_url(monkeypatch):
     data = resp.json()
     assert data["issue_number"] == 7
     assert data["issue_url"] == "https://forgejo.test/Circuit-Forge/test/issues/7"
+
+    # Verify label IDs were forwarded to the issue creation call.
+    # mock_post_label returns id=99 for each of the 3 new labels → [99, 99, 99]
+    assert issue_call_kwargs, "Issue creation call was not made"
+    assert issue_call_kwargs[0]["json"]["labels"] == [99, 99, 99]
+
+
+def test_post_returns_502_on_label_creation_failure(monkeypatch):
+    """POST / returns 502 when Forgejo label creation fails."""
+    monkeypatch.setenv("FORGEJO_API_TOKEN", "test-token")
+    monkeypatch.delenv("DEMO_MODE", raising=False)
+    monkeypatch.setenv("FORGEJO_API_URL", "https://forgejo.test/api/v1")
+
+    label_list_response = MagicMock()
+    label_list_response.ok = True
+    label_list_response.json.return_value = []  # no existing labels
+
+    label_create_response = MagicMock()
+    label_create_response.ok = False
+    label_create_response.text = "forbidden"
+
+    client = _make_client()
+    with patch("circuitforge_core.api.feedback.requests.get", return_value=label_list_response), \
+         patch("circuitforge_core.api.feedback.requests.post", return_value=label_create_response):
+        res = client.post("/feedback", json={
+            "title": "Test", "description": "desc", "type": "other",
+        })
+    assert res.status_code == 502
+    assert "beta-feedback" in res.json()["detail"]
 
 
 def test_post_forgejo_error_returns_502(monkeypatch):

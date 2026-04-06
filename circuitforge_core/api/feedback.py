@@ -68,6 +68,11 @@ def _ensure_labels(label_names: list[str], base: str, repo: str) -> list[int]:
             )
             if r.ok:
                 ids.append(r.json()["id"])
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to create label '{name}': {r.text[:200]}",
+                )
     return ids
 
 
@@ -79,7 +84,7 @@ def _collect_context(tab: str, product: str) -> dict[str, str]:
             text=True,
             timeout=5,
         ).strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         version = "dev"
     return {
         "product": product,
