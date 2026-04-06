@@ -32,8 +32,10 @@ jobs:
           FORGEJO_TOKEN: ${{ secrets.FORGEJO_RELEASE_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          curl -s -X POST \
-            -H "Authorization: token ${FORGEJO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/circuitforge-core/releases" \
-            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":false}"
+          jq -n --arg tag "${TAG}" \
+            '{"tag_name":$tag,"name":$tag,"draft":false,"prerelease":false}' \
+          | curl -sf -X POST \
+              -H "Authorization: token ${FORGEJO_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/circuitforge-core/releases" \
+              -d @-
