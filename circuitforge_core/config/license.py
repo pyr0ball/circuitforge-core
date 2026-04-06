@@ -27,9 +27,9 @@ _DEFAULT_HEIMDALL_URL = "https://license.circuitforge.tech"
 _CACHE_TTL_SECONDS = 1800  # 30 minutes
 
 # Cache: (key, product) -> (result_dict, expires_at)
-_cache: dict[tuple[str, str], tuple[dict, float]] = {}
+_cache: dict[tuple[str, str], tuple[dict[str, bool | str], float]] = {}
 
-_INVALID: dict = {"valid": False, "tier": "free", "user_id": ""}
+_INVALID: dict[str, bool | str] = {"valid": False, "tier": "free", "user_id": ""}
 
 
 def _heimdall_url(override: str | None) -> str:
@@ -40,7 +40,7 @@ def validate_license(
     product: str,
     min_tier: str = "free",
     heimdall_url: str | None = None,
-) -> dict:
+) -> dict[str, bool | str]:
     """
     Validate CF_LICENSE_KEY against Heimdall for the given product.
 
