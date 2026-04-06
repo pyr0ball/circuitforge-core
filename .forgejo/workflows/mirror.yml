@@ -1,0 +1,31 @@
+name: Mirror
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror to GitHub
+        continue-on-error: true
+        env:
+          GITHUB_MIRROR_TOKEN: ${{ secrets.GITHUB_MIRROR_TOKEN }}
+        run: |
+          git remote add github "https://x-access-token:${GITHUB_MIRROR_TOKEN}@github.com/CircuitForgeLLC/circuitforge-core.git"
+          git push github --mirror
+
+      - name: Mirror to Codeberg
+        continue-on-error: true
+        env:
+          CODEBERG_MIRROR_TOKEN: ${{ secrets.CODEBERG_MIRROR_TOKEN }}
+        run: |
+          git remote add codeberg "https://CircuitForge:${CODEBERG_MIRROR_TOKEN}@codeberg.org/CircuitForge/circuitforge-core.git"
+          git push codeberg --mirror

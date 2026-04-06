@@ -1,0 +1,52 @@
+name: Release — PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+
+      - name: Create Forgejo release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_RELEASE_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Check if release already exists for this tag
+          EXISTING=$(curl -sf \
+            -H "Authorization: token ${FORGEJO_TOKEN}" \
+            "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/circuitforge-core/releases/tags/${TAG}" \
+            2>/dev/null | jq -r '.id // empty')
+
+          if [ -z "${EXISTING}" ]; then
+            jq -n --arg tag "${TAG}" \
+              '{"tag_name":$tag,"name":$tag,"draft":false,"prerelease":false}' \
+            | curl -sf -X POST \
+                -H "Authorization: token ${FORGEJO_TOKEN}" \
+                -H "Content-Type: application/json" \
+                "https://git.opensourcesolarpunk.com/api/v1/repos/Circuit-Forge/circuitforge-core/releases" \
+                -d @-
+            echo "Release created for ${TAG}"
+          else
+            echo "Release for ${TAG} already exists (id=${EXISTING}), skipping."
+          fi
