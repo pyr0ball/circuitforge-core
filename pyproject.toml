@@ -49,6 +49,23 @@ tts-service = [
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
 ]
+vision-siglip = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "Pillow>=10.0",
+]
+vision-vlm = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "Pillow>=10.0",
+    "accelerate>=0.27",
+]
+vision-service = [
+    "circuitforge-core[vision-siglip]",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
 dev = [
     "circuitforge-core[manage]",
     "pytest>=8.0",
