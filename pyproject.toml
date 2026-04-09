@@ -39,6 +39,16 @@ stt-service = [
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
 ]
+tts-chatterbox = [
+    "chatterbox-tts>=0.1",
+    "torchaudio>=2.0",
+]
+tts-service = [
+    "circuitforge-core[tts-chatterbox]",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
 dev = [
     "circuitforge-core[manage]",
     "pytest>=8.0",
