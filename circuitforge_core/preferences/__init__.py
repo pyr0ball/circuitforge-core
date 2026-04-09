@@ -40,8 +40,11 @@ def set_user_preference(
     s.set(user_id=user_id, path=path, value=value)
 
 
+from . import accessibility as accessibility
+
 __all__ = [
     "get_path", "set_path",
     "get_user_preference", "set_user_preference",
     "LocalFileStore", "PreferenceStore",
+    "accessibility",
 ]

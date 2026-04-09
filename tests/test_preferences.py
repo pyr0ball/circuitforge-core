@@ -120,6 +120,93 @@ class TestLocalFileStore:
 
 
 from circuitforge_core.preferences import get_user_preference, set_user_preference
+from circuitforge_core.preferences.accessibility import (
+    is_reduced_motion_preferred,
+    is_high_contrast,
+    get_font_size,
+    is_screen_reader_mode,
+    set_reduced_motion,
+    PREF_REDUCED_MOTION,
+    PREF_HIGH_CONTRAST,
+    PREF_FONT_SIZE,
+    PREF_SCREEN_READER,
+)
+
+
+class TestAccessibilityPreferences:
+    def _store(self, tmp_path) -> LocalFileStore:
+        return LocalFileStore(prefs_path=tmp_path / "preferences.yaml")
+
+    def test_reduced_motion_default_false(self, tmp_path):
+        store = self._store(tmp_path)
+        assert is_reduced_motion_preferred(store=store) is False
+
+    def test_set_reduced_motion_persists(self, tmp_path):
+        store = self._store(tmp_path)
+        set_reduced_motion(True, store=store)
+        assert is_reduced_motion_preferred(store=store) is True
+
+    def test_reduced_motion_false_roundtrip(self, tmp_path):
+        store = self._store(tmp_path)
+        set_reduced_motion(True, store=store)
+        set_reduced_motion(False, store=store)
+        assert is_reduced_motion_preferred(store=store) is False
+
+    def test_high_contrast_default_false(self, tmp_path):
+        store = self._store(tmp_path)
+        assert is_high_contrast(store=store) is False
+
+    def test_high_contrast_set_and_read(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path=PREF_HIGH_CONTRAST, value=True)
+        assert is_high_contrast(store=store) is True
+
+    def test_font_size_default(self, tmp_path):
+        store = self._store(tmp_path)
+        assert get_font_size(store=store) == "default"
+
+    def test_font_size_large(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path=PREF_FONT_SIZE, value="large")
+        assert get_font_size(store=store) == "large"
+
+    def test_font_size_xlarge(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path=PREF_FONT_SIZE, value="xlarge")
+        assert get_font_size(store=store) == "xlarge"
+
+    def test_font_size_invalid_falls_back_to_default(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path=PREF_FONT_SIZE, value="gigantic")
+        assert get_font_size(store=store) == "default"
+
+    def test_screen_reader_mode_default_false(self, tmp_path):
+        store = self._store(tmp_path)
+        assert is_screen_reader_mode(store=store) is False
+
+    def test_screen_reader_mode_set(self, tmp_path):
+        store = self._store(tmp_path)
+        store.set(user_id=None, path=PREF_SCREEN_READER, value=True)
+        assert is_screen_reader_mode(store=store) is True
+
+    def test_preferences_are_independent(self, tmp_path):
+        """Setting one a11y pref doesn't affect others."""
+        store = self._store(tmp_path)
+        set_reduced_motion(True, store=store)
+        assert is_high_contrast(store=store) is False
+        assert get_font_size(store=store) == "default"
+        assert is_screen_reader_mode(store=store) is False
+
+    def test_user_id_threaded_through(self, tmp_path):
+        """user_id param is accepted (LocalFileStore ignores it, but must not error)."""
+        store = self._store(tmp_path)
+        set_reduced_motion(True, user_id="u999", store=store)
+        assert is_reduced_motion_preferred(user_id="u999", store=store) is True
+
+    def test_accessibility_exported_from_package(self):
+        from circuitforge_core.preferences import accessibility
+        assert hasattr(accessibility, "is_reduced_motion_preferred")
+        assert hasattr(accessibility, "PREF_REDUCED_MOTION")
 
 
 class TestPreferenceHelpers:

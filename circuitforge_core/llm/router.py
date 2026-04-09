@@ -199,15 +199,18 @@ class LLMRouter:
                     continue
 
             elif backend["type"] == "openai_compat":
-                if not self._is_reachable(backend["base_url"]):
-                    print(f"[LLMRouter] {name}: unreachable, skipping")
-                    continue
-                # --- cf_orch: optionally override base_url with coordinator-allocated URL ---
+                # cf_orch: try allocation first — this may start the service on-demand.
+                # Do NOT reachability-check before allocating; the service may be stopped
+                # and the allocation is what starts it.
                 orch_ctx = orch_alloc = None
                 orch_result = self._try_cf_orch_alloc(backend)
                 if orch_result is not None:
                     orch_ctx, orch_alloc = orch_result
                     backend = {**backend, "base_url": orch_alloc.url + "/v1"}
+                elif not self._is_reachable(backend["base_url"]):
+                    # Static backend (no cf-orch) — skip if not reachable.
+                    print(f"[LLMRouter] {name}: unreachable, skipping")
+                    continue
                 try:
                     client = OpenAI(
                         base_url=backend["base_url"],
