@@ -49,7 +49,7 @@ class SigLIPBackend:
     ) -> None:
         try:
             import torch
-            from transformers import AutoProcessor, AutoModel
+            from transformers import SiglipProcessor, SiglipModel
         except ImportError as exc:
             raise ImportError(
                 "SigLIPBackend requires torch and transformers. "
@@ -68,8 +68,21 @@ class SigLIPBackend:
         self._model_path = model_path
         self._vram_mb = _estimate_vram(model_path)
 
-        self._processor = AutoProcessor.from_pretrained(model_path)
-        self._model = AutoModel.from_pretrained(
+        # transformers 5.2.0 broke SiglipProcessor.from_pretrained() via the
+        # auto-detection path (TOKENIZER_MAPPING_NAMES.get() returns None for
+        # 'siglip', causing AttributeError on .replace()).  Load components
+        # directly and compose manually to bypass that code path.
+        try:
+            from transformers import SiglipTokenizer, SiglipImageProcessor
+            _tokenizer = SiglipTokenizer.from_pretrained(model_path)
+            _image_proc = SiglipImageProcessor.from_pretrained(model_path)
+            self._processor = SiglipProcessor(
+                image_processor=_image_proc, tokenizer=_tokenizer
+            )
+        except Exception:
+            # Fallback: try the standard path (may work on older transformers builds)
+            self._processor = SiglipProcessor.from_pretrained(model_path)
+        self._model = SiglipModel.from_pretrained(
             model_path,
             torch_dtype=self._torch_dtype,
         ).to(device)
