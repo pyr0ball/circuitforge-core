@@ -1,8 +1,16 @@
 # circuitforge_core/community/__init__.py
 # MIT License
 
-from .db import CommunityDB
 from .models import CommunityPost
-from .store import SharedStore
+
+try:
+    from .db import CommunityDB
+except ImportError:
+    CommunityDB = None  # type: ignore[assignment,misc]
+
+try:
+    from .store import SharedStore
+except ImportError:
+    SharedStore = None  # type: ignore[assignment,misc]
 
 __all__ = ["CommunityDB", "CommunityPost", "SharedStore"]
