@@ -66,8 +66,9 @@ class SharedStore:
     All methods return new objects (immutable pattern). Never mutate rows in-place.
     """
 
-    def __init__(self, db: "CommunityDB") -> None:
+    def __init__(self, db: "CommunityDB", source_product: str = "kiwi") -> None:
         self._db = db
+        self._source_product = source_product
 
     # ------------------------------------------------------------------
     # Reads
@@ -176,7 +177,7 @@ class SharedStore:
                         json.dumps(list(post.allergen_flags)),
                         json.dumps(list(post.flavor_molecules)),
                         post.fat_pct, post.protein_pct, post.moisture_pct,
-                        "kiwi",
+                        self._source_product,
                     ),
                 )
                 conn.commit()

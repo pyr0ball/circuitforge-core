@@ -66,25 +66,22 @@ class CommunityPost:
     protein_pct: float | None
     moisture_pct: float | None
 
-    def __init__(self, **kwargs):
-        # 1. Coerce list fields to tuples
+    def __post_init__(self) -> None:
+        # Coerce list fields to tuples (frozen dataclass: use object.__setattr__)
         for key in ("slots", "dietary_tags", "allergen_flags", "flavor_molecules"):
-            if key in kwargs and isinstance(kwargs[key], list):
-                kwargs[key] = tuple(kwargs[key])
+            val = getattr(self, key)
+            if isinstance(val, list):
+                object.__setattr__(self, key, tuple(val))
 
-        # 2. Validate BEFORE assignment
-        post_type = kwargs.get("post_type")
-        if post_type not in _VALID_POST_TYPES:
+        # Validate post_type
+        if self.post_type not in _VALID_POST_TYPES:
             raise ValueError(
-                f"post_type must be one of {sorted(_VALID_POST_TYPES)}, got {post_type!r}"
+                f"post_type must be one of {sorted(_VALID_POST_TYPES)}, got {self.post_type!r}"
             )
+
+        # Validate scores
         for score_name in (
             "seasoning_score", "richness_score", "brightness_score",
             "depth_score", "aroma_score", "structure_score",
         ):
-            if score_name in kwargs:
-                _validate_score(score_name, kwargs[score_name])
-
-        # 3. Assign all fields
-        for f in self.__dataclass_fields__:
-            object.__setattr__(self, f, kwargs[f])
+            _validate_score(score_name, getattr(self, score_name))
