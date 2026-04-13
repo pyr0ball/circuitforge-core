@@ -11,10 +11,12 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.31",
     "openai>=1.0",
-    "psycopg2>=2.9",
 ]
 
 [project.optional-dependencies]
+community = [
+    "psycopg2>=2.9",
+]
 manage = [
     "platformdirs>=4.0",
     "typer[all]>=0.12",
