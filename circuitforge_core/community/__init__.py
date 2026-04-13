@@ -2,15 +2,7 @@
 # MIT License
 
 from .models import CommunityPost
-
-try:
-    from .db import CommunityDB
-except ImportError:
-    CommunityDB = None  # type: ignore[assignment,misc]
-
-try:
-    from .store import SharedStore
-except ImportError:
-    SharedStore = None  # type: ignore[assignment,misc]
+from .db import CommunityDB
+from .store import SharedStore
 
 __all__ = ["CommunityDB", "CommunityPost", "SharedStore"]
