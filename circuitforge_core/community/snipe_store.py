@@ -172,3 +172,82 @@ class SnipeCommunityStore(SharedStore):
                 return cur.fetchone()[0]
         finally:
             self._db.putconn(conn)
+
+    def publish_categories(
+        self,
+        categories: list[tuple[str, str, str]],
+        platform: str = "ebay",
+    ) -> int:
+        """Upsert a batch of eBay leaf categories into the shared community table.
+
+        Args:
+            categories: List of (category_id, name, full_path) tuples.
+            platform: Source auction platform (default "ebay").
+
+        Returns:
+            Number of rows upserted.
+        """
+        if not categories:
+            return 0
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO community_categories
+                        (platform, category_id, name, full_path, source_product)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (platform, category_id)
+                    DO UPDATE SET
+                        name = EXCLUDED.name,
+                        full_path = EXCLUDED.full_path,
+                        source_product = EXCLUDED.source_product,
+                        published_at = NOW()
+                    """,
+                    [
+                        (platform, cid, name, path, self._source_product)
+                        for cid, name, path in categories
+                    ],
+                )
+                conn.commit()
+                return len(categories)
+        except Exception:
+            conn.rollback()
+            log.warning(
+                "Failed to publish %d categories to community store",
+                len(categories), exc_info=True,
+            )
+            raise
+        finally:
+            self._db.putconn(conn)
+
+    def fetch_categories(
+        self,
+        platform: str = "ebay",
+        limit: int = 500,
+    ) -> list[tuple[str, str, str]]:
+        """Fetch community-contributed eBay categories.
+
+        Args:
+            platform: Source auction platform (default "ebay").
+            limit: Maximum rows to return.
+
+        Returns:
+            List of (category_id, name, full_path) tuples ordered by name.
+        """
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT category_id, name, full_path
+                    FROM community_categories
+                    WHERE platform = %s
+                    ORDER BY name
+                    LIMIT %s
+                    """,
+                    (platform, limit),
+                )
+                return [(row[0], row[1], row[2]) for row in cur.fetchall()]
+        finally:
+            self._db.putconn(conn)
