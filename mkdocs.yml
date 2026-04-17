@@ -1,0 +1,82 @@
+site_name: circuitforge-core
+site_description: Shared scaffold for CircuitForge products — modules, conventions, and developer reference.
+site_author: Circuit Forge LLC
+site_url: https://docs.circuitforge.tech/cf-core
+repo_url: https://git.opensourcesolarpunk.com/Circuit-Forge/circuitforge-core
+repo_name: Circuit-Forge/circuitforge-core
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.top
+    - navigation.sections
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Using in a Product: getting-started/using-in-product.md
+  - Module Reference:
+    - Overview: modules/index.md
+    - db: modules/db.md
+    - llm: modules/llm.md
+    - tiers: modules/tiers.md
+    - config: modules/config.md
+    - hardware: modules/hardware.md
+    - documents: modules/documents.md
+    - affiliates: modules/affiliates.md
+    - preferences: modules/preferences.md
+    - tasks: modules/tasks.md
+    - manage: modules/manage.md
+    - resources: modules/resources.md
+    - text: modules/text.md
+    - stt: modules/stt.md
+    - tts: modules/tts.md
+    - pipeline: modules/pipeline.md
+    - vision: modules/vision.md
+    - wizard: modules/wizard.md
+  - Developer Guide:
+    - Adding a Module: developer/adding-module.md
+    - Editable Install Pattern: developer/editable-install.md
+    - BSL vs MIT Boundaries: developer/licensing.md
+
+extra_javascript:
+  - plausible.js
