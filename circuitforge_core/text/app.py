@@ -116,6 +116,12 @@ def create_app(
 ) -> FastAPI:
     global _backend
 
+    if not mock and not model_path:
+        raise ValueError(
+            "cf-text: --model is required (got empty string). "
+            "Pass a GGUF path, a HuggingFace model ID, or set CF_TEXT_MOCK=1 for mock mode."
+        )
+
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(gpu_id))
 
     _backend = make_text_backend(model_path, backend=backend, mock=mock)
