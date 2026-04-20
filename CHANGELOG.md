@@ -6,6 +6,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.12.0] — 2026-04-20
+
+### Added
+
+**`circuitforge_core.job_quality`** — deterministic trust scorer for job listings (MIT, closes #48)
+
+Pure signal processing module. No LLM calls, no network calls, no file I/O. Fully auditable and independently unit-testable per signal.
+
+- `models.py` — `JobListing`, `JobEnrichment`, `SignalResult`, `JobQualityScore` (Pydantic)
+- `signals.py` — 12 signal functions with weights: `listing_age` (0.25), `repost_detected` (0.25), `no_salary_transparency` (0.20), `always_open_pattern` (0.20), `staffing_agency` (0.15), `requirement_overload` (0.12), `layoff_news` (0.12), `jd_vagueness` (0.10), `ats_blackhole` (0.10), `high_applicant_count` (0.08), `poor_response_history` (0.08), `weekend_posted` (0.04)
+- `scorer.py` — `score_job(listing, enrichment=None) -> JobQualityScore`; trust_score = 1 − clamp(sum(triggered weights), 0, 1); confidence = fraction of signals with available evidence
+- Salary transparency enforcement for CO, CA, NY, WA, IL, MA; ATS blackhole detection (Lever, Greenhouse, Workday, iCIMS, Taleo)
+- `ALL_SIGNALS` registry for iteration and extension
+- 83 tests across models, signals (all 12 individually), and scorer — 100% pass
+
+---
+
 ## [0.11.0] — 2026-04-20
 
 ### Added
