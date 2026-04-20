@@ -128,7 +128,16 @@ class LLMRouter:
             service = orch_cfg.get("service", "vllm")
             candidates = orch_cfg.get("model_candidates", [])
             ttl_s = float(orch_cfg.get("ttl_s", 3600.0))
-            ctx = client.allocate(service, model_candidates=candidates, ttl_s=ttl_s, caller="llm-router")
+            # CF_APP_NAME identifies the calling product (kiwi, peregrine, etc.)
+            # in coordinator analytics — set in each product's .env.
+            pipeline = os.environ.get("CF_APP_NAME") or None
+            ctx = client.allocate(
+                service,
+                model_candidates=candidates,
+                ttl_s=ttl_s,
+                caller="llm-router",
+                pipeline=pipeline,
+            )
             alloc = ctx.__enter__()
             return (ctx, alloc)
         except Exception as exc:
@@ -179,7 +188,14 @@ class LLMRouter:
                 continue
 
             if is_vision_service:
-                if not self._is_reachable(backend["base_url"]):
+                # cf_orch: try allocation first (same pattern as openai_compat).
+                # Allocation can start the vision service on-demand on the cluster.
+                orch_ctx = orch_alloc = None
+                orch_result = self._try_cf_orch_alloc(backend)
+                if orch_result is not None:
+                    orch_ctx, orch_alloc = orch_result
+                    backend = {**backend, "base_url": orch_alloc.url}
+                elif not self._is_reachable(backend["base_url"]):
                     print(f"[LLMRouter] {name}: unreachable, skipping")
                     continue
                 try:
@@ -197,6 +213,9 @@ class LLMRouter:
                 except Exception as e:
                     print(f"[LLMRouter] {name}: error — {e}, trying next")
                     continue
+                finally:
+                    if orch_ctx is not None:
+                        orch_ctx.__exit__(None, None, None)
 
             elif backend["type"] == "openai_compat":
                 # cf_orch: try allocation first — this may start the service on-demand.
