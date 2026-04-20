@@ -6,6 +6,23 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.13.0] — 2026-04-20
+
+### Added
+
+**`circuitforge_core.preferences.currency`** — per-user currency code preference + formatting utility (MIT, closes #52)
+
+- `PREF_CURRENCY_CODE = "currency.code"` — shared store key; all products read from the same path
+- `get_currency_code(user_id, store)` — priority fallback: store → `CURRENCY_DEFAULT` env var → `"USD"`
+- `set_currency_code(currency_code, user_id, store)` — persists ISO 4217 code, uppercased
+- `format_currency(amount, currency_code, locale="en_US")` — uses `babel.numbers.format_currency` when available; falls back to a built-in 30-currency symbol table (no hard babel dependency)
+- Symbol table covers: USD, CAD, AUD, NZD, GBP, EUR, CHF, SEK/NOK/DKK, JPY, CNY, KRW, INR, BRL, MXN, ZAR, SGD, HKD, THB, PLN, CZK, HUF, RUB, TRY, ILS, AED, SAR, CLP, COP, ARS, VND, IDR, MYR, PHP
+- JPY/KRW/HUF/CLP/COP/VND/IDR format with 0 decimal places per ISO 4217 minor-unit convention
+- Exported from `circuitforge_core.preferences` as `currency` submodule
+- 30 tests (preference store, env var fallback, format dispatch, symbol table, edge cases)
+
+---
+
 ## [0.12.0] — 2026-04-20
 
 ### Added

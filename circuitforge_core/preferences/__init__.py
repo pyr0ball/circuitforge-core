@@ -41,10 +41,12 @@ def set_user_preference(
 
 
 from . import accessibility as accessibility
+from . import currency as currency
 
 __all__ = [
     "get_path", "set_path",
     "get_user_preference", "set_user_preference",
     "LocalFileStore", "PreferenceStore",
     "accessibility",
+    "currency",
 ]
