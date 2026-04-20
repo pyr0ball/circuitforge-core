@@ -6,6 +6,27 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.14.0] — 2026-04-20
+
+### Added
+
+**`circuitforge_core.activitypub`** — ActivityPub actor management, object construction, HTTP Signature signing, delivery, and Lemmy integration (MIT, closes #51)
+
+- `actor.py` — `CFActor` frozen dataclass; `generate_rsa_keypair(bits)`; `make_actor()`; `load_actor_from_key_file()`. `to_ap_dict()` produces an ActivityPub Application/Person object and never includes the private key.
+- `objects.py` — `make_note()`, `make_offer()`, `make_request()` (CF namespace extension), `make_create()`. All return plain dicts; IDs minted with UUID4. `make_request` uses `https://circuitforge.tech/ns/activitystreams` context extension for the non-AS2 Request type.
+- `signing.py` — `sign_headers()` (draft-cavage-http-signatures-08, rsa-sha256; signs `(request-target)`, `host`, `date`, `digest`, `content-type`). `verify_signature()` re-computes Digest from actual body after signature verification to catch body-swap attacks.
+- `delivery.py` — `deliver_activity(activity, inbox_url, actor)` — synchronous `requests.post` with signed headers and `Content-Type: application/activity+json`.
+- `lemmy.py` — `LemmyConfig` frozen dataclass; `LemmyClient` with `login()`, `resolve_community()` (bare name or `!community@instance` address), `post_to_community()`. Uses Lemmy v0.19+ REST API (JWT auth). `LemmyAuthError` / `LemmyCommunityNotFound` exceptions.
+- `inbox.py` — `make_inbox_router(handlers, verify_key_fetcher, path)` — FastAPI APIRouter stub; dispatches by activity type; optional HTTP Signature verification via async `verify_key_fetcher` callback. FastAPI imported at module level with `_FASTAPI_AVAILABLE` guard (avoids annotation-resolution bug with lazy string annotations).
+- 105 tests across all six files.
+
+**Key design notes:**
+- `inbox` not re-exported from `__init__` — requires fastapi, imported explicitly by products that need it
+- Signing Digest + re-verifying digest against body on verify — prevents body-swap attacks even when signature is valid
+- `from __future__ import annotations` intentionally omitted in `inbox.py` — FastAPI resolves `Request` annotation against module globals at route registration time
+
+---
+
 ## [0.13.0] — 2026-04-20
 
 ### Added
