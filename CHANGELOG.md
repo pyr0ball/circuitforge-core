@@ -6,6 +6,30 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.11.0] — 2026-04-20
+
+### Added
+
+**`circuitforge_core.audio`** — shared PCM and audio signal utilities (MIT, numpy-only, closes #50)
+
+Pure signal processing module. No model weights, no HuggingFace, no torch dependency.
+
+- `convert.py` — `pcm_to_float32`, `float32_to_pcm`, `bytes_to_float32` (int16 ↔ float32 with correct int16 asymmetry handling)
+- `gate.py` — `is_silent`, `rms` (RMS energy gate; default 0.005 threshold extracted from cf-voice)
+- `resample.py` — `resample` (scipy `resample_poly` when available; numpy linear interpolation fallback)
+- `buffer.py` — `ChunkAccumulator` (window-based chunk collector with `flush`, `reset`, bounds enforcement)
+- Replaces hand-rolled equivalents in cf-voice `stt.py` + `context.py`. Also consumed by Sparrow and Linnet.
+
+**`circuitforge_core.musicgen` tests** — 21 tests covering mock backend, factory, and FastAPI app endpoints (closes #49). Module was already implemented; tests were the missing deliverable.
+
+### Fixed
+
+**SQLCipher PRAGMA injection** (closes #45) — `db/base.py` now uses `PRAGMA key=?` parameterized form instead of f-string interpolation. Regression tests added (skipped gracefully when `pysqlcipher3` is not installed).
+
+**`circuitforge_core.text.app`** — early validation on empty `--model` argument: raises `ValueError` with a clear message before reaching the HuggingFace loader. Prevents the cryptic `HFValidationError` surfaced by cf-orch #46 when no model candidates were provided.
+
+---
+
 ## [0.10.0] — 2026-04-12
 
 ### Added
