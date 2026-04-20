@@ -1,7 +1,47 @@
 """
 LLM abstraction layer with priority fallback chain.
-Reads config from ~/.config/circuitforge/llm.yaml.
-Tries backends in order; falls back on any error.
+
+Reads config from ~/.config/circuitforge/llm.yaml (or the path passed to
+LLMRouter.__init__). Tries backends in fallback_order; skips unreachable or
+disabled entries and falls back to the next until one succeeds.
+
+## Backend types
+
+**openai_compat** — OpenAI-compatible /v1/chat/completions endpoint.
+  Used for: Ollama, vLLM, GitHub Copilot wrapper, Claude Code wrapper,
+  and the cf-orch trunk services (cf-text, cf-voice).
+
+  With a cf_orch block the router first allocates via cf-orch, which
+  starts the service on-demand and returns its URL. Without cf_orch the
+  router does a static reachability check against base_url.
+
+**anthropic** — Direct Anthropic API via the anthropic SDK.
+
+**vision_service** — cf-vision managed service (moondream2 / SigLIP).
+  Posts to /analyze; only used when images= is provided to complete().
+  Supports cf_orch allocation to start cf-vision on-demand.
+
+## Trunk services (The Orchard architecture)
+
+These services live in cf-orch as branches; cf-core wires them as backends.
+Products declare them in llm.yaml using the openai_compat type plus a
+cf_orch block — the router handles allocation and URL injection transparently.
+
+  cf-text   — Local transformer inference (/v1/chat/completions, port 8008).
+               Default model set by default_model in the node's service
+               profile; override via model_candidates in the cf_orch block.
+
+  cf-voice  — STT/TTS pipeline endpoint (/v1/chat/completions, port 8009).
+               Same allocation pattern as cf-text.
+
+  cf-vision — Vision inference (moondream2 / SigLIP), vision_service type.
+               Used via the vision_fallback_order when images are present.
+
+## Config auto-detection (no llm.yaml)
+
+When llm.yaml is absent, the router builds a minimal config from environment
+variables: ANTHROPIC_API_KEY, OPENAI_API_KEY / OPENAI_BASE_URL, OLLAMA_HOST.
+Ollama on localhost:11434 is always included as the lowest-cost local fallback.
 """
 import logging
 import os
