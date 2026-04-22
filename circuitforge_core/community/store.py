@@ -207,3 +207,170 @@ class SharedStore:
             raise
         finally:
             self._db.putconn(conn)
+
+    # ── Recipe tags ───────────────────────────────────────────────────────────
+
+    def submit_recipe_tag(
+        self,
+        recipe_id: int,
+        domain: str,
+        category: str,
+        subcategory: str | None,
+        pseudonym: str,
+        source_product: str = "kiwi",
+    ) -> dict:
+        """Submit a new subcategory tag for a corpus recipe.
+
+        Inserts the tag with upvotes=1 and records the submitter's self-vote in
+        recipe_tag_votes. Returns the created tag row as a dict.
+
+        Raises psycopg2.errors.UniqueViolation if the same user has already
+        tagged this recipe to this location — let the caller handle it.
+        """
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO recipe_tags
+                        (recipe_source, recipe_ref, domain, category, subcategory,
+                         pseudonym, upvotes, source_product)
+                    VALUES ('corpus', %s, %s, %s, %s, %s, 1, %s)
+                    RETURNING id, recipe_ref, domain, category, subcategory,
+                              pseudonym, upvotes, created_at
+                    """,
+                    (str(recipe_id), domain, category, subcategory,
+                     pseudonym, source_product),
+                )
+                row = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+                # Record submitter's self-vote
+                cur.execute(
+                    "INSERT INTO recipe_tag_votes (tag_id, pseudonym) VALUES (%s, %s)",
+                    (row["id"], pseudonym),
+                )
+                conn.commit()
+                return row
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._db.putconn(conn)
+
+    def upvote_recipe_tag(self, tag_id: int, pseudonym: str) -> int:
+        """Add an upvote to a tag from pseudonym. Returns new upvote count.
+
+        Raises psycopg2.errors.UniqueViolation if this pseudonym already voted.
+        Raises ValueError if the tag does not exist.
+        """
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO recipe_tag_votes (tag_id, pseudonym) VALUES (%s, %s)",
+                    (tag_id, pseudonym),
+                )
+                cur.execute(
+                    "UPDATE recipe_tags SET upvotes = upvotes + 1 WHERE id = %s"
+                    " RETURNING upvotes",
+                    (tag_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise ValueError(f"recipe_tag {tag_id} not found")
+                conn.commit()
+                return row[0]
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._db.putconn(conn)
+
+    def get_recipe_tag_by_id(self, tag_id: int) -> dict | None:
+        """Return a single recipe_tag row by ID, or None if not found."""
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, recipe_ref, domain, category, subcategory,
+                           pseudonym, upvotes, created_at
+                    FROM recipe_tags WHERE id = %s
+                    """,
+                    (tag_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                return dict(zip([d[0] for d in cur.description], row))
+        finally:
+            self._db.putconn(conn)
+
+    def list_tags_for_recipe(
+        self,
+        recipe_id: int,
+        source_product: str = "kiwi",
+    ) -> list[dict]:
+        """Return all tags for a corpus recipe, accepted or not, newest first."""
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, domain, category, subcategory, pseudonym,
+                           upvotes, created_at
+                    FROM recipe_tags
+                    WHERE recipe_source = 'corpus'
+                      AND recipe_ref = %s
+                      AND source_product = %s
+                    ORDER BY upvotes DESC, created_at DESC
+                    """,
+                    (str(recipe_id), source_product),
+                )
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, r)) for r in cur.fetchall()]
+        finally:
+            self._db.putconn(conn)
+
+    def get_accepted_recipe_ids_for_subcategory(
+        self,
+        domain: str,
+        category: str,
+        subcategory: str | None,
+        source_product: str = "kiwi",
+        threshold: int = 2,
+    ) -> list[int]:
+        """Return corpus recipe IDs with accepted community tags for a subcategory.
+
+        Used by browse_counts_cache refresh and browse_recipes() FTS fallback.
+        Only includes tags that have reached the acceptance threshold.
+        """
+        conn = self._db.getconn()
+        try:
+            with conn.cursor() as cur:
+                if subcategory is None:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT recipe_ref::INTEGER
+                        FROM recipe_tags
+                        WHERE source_product = %s
+                          AND domain = %s AND category = %s
+                          AND subcategory IS NULL
+                          AND upvotes >= %s
+                        """,
+                        (source_product, domain, category, threshold),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT DISTINCT recipe_ref::INTEGER
+                        FROM recipe_tags
+                        WHERE source_product = %s
+                          AND domain = %s AND category = %s
+                          AND subcategory = %s
+                          AND upvotes >= %s
+                        """,
+                        (source_product, domain, category, subcategory, threshold),
+                    )
+                return [r[0] for r in cur.fetchall()]
+        finally:
+            self._db.putconn(conn)
