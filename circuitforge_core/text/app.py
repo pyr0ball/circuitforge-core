@@ -16,6 +16,12 @@ Usage:
         --port 8006 \
         --gpu-id 0
 
+Multi-GPU (spans two GPUs via CUDA_VISIBLE_DEVICES, device_map=auto):
+    python -m circuitforge_core.text.app \
+        --model /Library/Assets/LLM/deepseek-14b \
+        --port 8006 \
+        --gpu-ids 0,1
+
 Mock mode (no model or GPU required):
     CF_TEXT_MOCK=1 python -m circuitforge_core.text.app --port 8006
 """
@@ -111,9 +117,17 @@ class OAIChatResponse(BaseModel):
 def create_app(
     model_path: str,
     gpu_id: int = 0,
+    gpu_ids: str | None = None,
     backend: str | None = None,
     mock: bool = False,
 ) -> FastAPI:
+    """Start the cf-text FastAPI app.
+
+    ``gpu_ids``: comma-separated CUDA device indices for multi-GPU spanning
+    (e.g. "0,1"). When set, overrides ``gpu_id`` and sets
+    ``CUDA_VISIBLE_DEVICES`` to the full list so HuggingFace Accelerate's
+    ``device_map="auto"`` can shard the model across all listed devices.
+    """
     global _backend
 
     if not mock and not model_path:
@@ -122,7 +136,8 @@ def create_app(
             "Pass a GGUF path, a HuggingFace model ID, or set CF_TEXT_MOCK=1 for mock mode."
         )
 
-    os.environ.setdefault("CUDA_VISIBLE_DEVICES", str(gpu_id))
+    visible = gpu_ids if gpu_ids else str(gpu_id)
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", visible)
 
     _backend = make_text_backend(model_path, backend=backend, mock=mock)
     logger.info("cf-text ready: model=%r vram=%dMB", _backend.model_name, _backend.vram_mb)
@@ -211,7 +226,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8006)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--gpu-id", type=int, default=0,
-                        help="CUDA device index to use")
+                        help="CUDA device index to use (single GPU)")
+    parser.add_argument("--gpu-ids", default=None,
+                        help="Comma-separated CUDA device indices for multi-GPU spanning "
+                             "(e.g. '0,1'). Overrides --gpu-id when set.")
     parser.add_argument("--backend", choices=["llamacpp", "transformers"], default=None)
     parser.add_argument("--mock", action="store_true",
                         help="Run in mock mode (no model or GPU needed)")
@@ -226,6 +244,7 @@ if __name__ == "__main__":
     app = create_app(
         model_path=args.model,
         gpu_id=args.gpu_id,
+        gpu_ids=args.gpu_ids,
         backend=args.backend,
         mock=mock,
     )

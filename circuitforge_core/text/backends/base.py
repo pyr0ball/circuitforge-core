@@ -121,17 +121,19 @@ class TextBackend(Protocol):
 
 def _select_backend(model_path: str, backend: str | None) -> str:
     """
-    Return "llamacpp" or "transformers" for the given model path.
+    Return "llamacpp", "transformers", "ollama", or "vllm" for the given model path.
 
     Parameters
     ----------
-    model_path  Path to the model file or HuggingFace repo ID (e.g. "Qwen/Qwen2.5-3B").
-    backend     Explicit override from the caller ("llamacpp" | "transformers" | None).
+    model_path  Path to the model file, HuggingFace repo ID, "ollama://<name>",
+                or "vllm://<model-id>".
+    backend     Explicit override from the caller
+                ("llamacpp" | "transformers" | "ollama" | "vllm" | None).
                 When provided, trust it without inspection.
 
-    Return "llamacpp" or "transformers". Raise ValueError for unrecognised values.
+    Raise ValueError for unrecognised override values.
     """
-    _VALID = ("llamacpp", "transformers")
+    _VALID = ("llamacpp", "transformers", "ollama", "vllm")
 
     # 1. Caller-supplied override — highest trust, no inspection needed.
     resolved = backend or os.environ.get("CF_TEXT_BACKEND")
@@ -142,11 +144,17 @@ def _select_backend(model_path: str, backend: str | None) -> str:
             )
         return resolved
 
-    # 2. Format detection — GGUF files are unambiguously llama-cpp territory.
+    # 2. Proxy prefixes — unambiguous routing regardless of model name format.
+    if model_path.startswith("ollama://"):
+        return "ollama"
+    if model_path.startswith("vllm://"):
+        return "vllm"
+
+    # 3. Format detection — GGUF files are unambiguously llama-cpp territory.
     if model_path.lower().endswith(".gguf"):
         return "llamacpp"
 
-    # 3. Safe default — transformers covers HF repo IDs and safetensors dirs.
+    # 4. Safe default — transformers covers HF repo IDs and safetensors dirs.
     return "transformers"
 
 
@@ -179,4 +187,12 @@ def make_text_backend(
         from circuitforge_core.text.backends.transformers import TransformersBackend
         return TransformersBackend(model_path=model_path)
 
-    raise ValueError(f"Unknown backend {resolved!r}. Expected 'llamacpp' or 'transformers'.")
+    if resolved == "ollama":
+        from circuitforge_core.text.backends.ollama import OllamaBackend
+        return OllamaBackend(model_path=model_path)
+
+    if resolved == "vllm":
+        from circuitforge_core.text.backends.vllm import VllmBackend
+        return VllmBackend(model_path=model_path)
+
+    raise ValueError(f"Unknown backend {resolved!r}. Expected 'llamacpp', 'transformers', 'ollama', or 'vllm'.")
