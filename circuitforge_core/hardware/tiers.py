@@ -69,7 +69,7 @@ VRAM_TIERS: list[VramTier] = [
         profile_name="single-gpu-8gb",
         ollama_model="qwen2.5:7b-instruct",
         vllm_candidates=["Qwen2.5-3B-Instruct", "Phi-4-mini-instruct"],
-        services=["ollama", "vllm", "cf-vision", "cf-docuvision", "cf-stt", "cf-tts"],
+        services=["ollama", "vllm", "cf-vision", "cf-docuvision", "cf-stt", "cf-tts", "cf-musicgen"],
         llm_max_params="8b",
     ),
     VramTier(
@@ -79,7 +79,7 @@ VRAM_TIERS: list[VramTier] = [
         ollama_model="qwen2.5:14b-instruct-q4_k_m",
         vllm_candidates=["Qwen2.5-14B-Instruct", "Qwen2.5-3B-Instruct", "Phi-4-mini-instruct"],
         services=["ollama", "vllm", "cf-vision", "cf-docuvision", "cf-stt", "cf-tts",
-                  "cf-embed", "cf-classify"],
+                  "cf-musicgen", "cf-embed", "cf-classify"],
         llm_max_params="14b",
     ),
     VramTier(
@@ -89,7 +89,7 @@ VRAM_TIERS: list[VramTier] = [
         ollama_model="qwen2.5:32b-instruct-q4_k_m",
         vllm_candidates=["Qwen2.5-14B-Instruct", "Qwen2.5-3B-Instruct", "Phi-4-mini-instruct"],
         services=["ollama", "vllm", "cf-vision", "cf-docuvision", "cf-stt", "cf-tts",
-                  "cf-embed", "cf-classify", "comfyui"],
+                  "cf-musicgen", "cf-embed", "cf-classify", "comfyui"],
         llm_max_params="32b-q4",
     ),
 ]

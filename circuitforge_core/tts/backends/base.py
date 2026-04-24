@@ -60,7 +60,12 @@ def _encode_audio(
     if format == "wav":
         torchaudio.save(buf, wav, sample_rate, format="wav")
     elif format == "ogg":
-        torchaudio.save(buf, wav, sample_rate, format="ogg", encoding="vorbis")
+        # libvorbis may not be available on all torchaudio builds; fall back to wav
+        try:
+            torchaudio.save(buf, wav, sample_rate, format="ogg", encoding="vorbis")
+        except Exception:
+            buf = io.BytesIO()
+            torchaudio.save(buf, wav, sample_rate, format="wav")
     elif format == "mp3":
         # torchaudio MP3 encode requires ffmpeg backend; fall back to wav on failure
         try:

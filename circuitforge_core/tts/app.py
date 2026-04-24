@@ -29,7 +29,7 @@ _CONTENT_TYPES: dict[str, str] = {
 }
 
 app = FastAPI(title="cf-tts")
-_backend: TTSBackend | None = None
+_backend = None  # type: TTSBackend | None
 
 
 @app.get("/health")
@@ -96,7 +96,6 @@ if __name__ == "__main__":
     mock = args.mock or args.model == "mock"
     device = "cpu" if mock else "cuda"
 
-    global _backend
     _backend = make_tts_backend(args.model, mock=mock, device=device)
     print(f"cf-tts backend ready: {_backend.model_name} ({_backend.vram_mb} MB)")
 
