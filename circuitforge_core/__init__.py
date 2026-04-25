@@ -1,4 +1,4 @@
-__version__ = "0.16.0"
+__version__ = "0.16.1"
 
 try:
     from circuitforge_core.community import CommunityDB, CommunityPost, SharedStore

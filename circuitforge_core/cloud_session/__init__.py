@@ -312,3 +312,29 @@ class CloudSessionFactory:
             return session
 
         return _check
+
+
+# ── BYOK detection ────────────────────────────────────────────────────────────
+
+def detect_byok(config_path: Path | None = None) -> bool:
+    """Return True if at least one enabled non-vision LLM backend is configured.
+
+    Reads the shared llm.yaml that LLMRouter uses. Local (Ollama, vLLM) and
+    API-key backends both count — the policy is "user is supplying compute",
+    regardless of where that compute lives.
+
+    Args:
+        config_path: Override the default config location. Useful in tests.
+    """
+    import yaml
+    if config_path is None:
+        config_path = Path.home() / ".config" / "circuitforge" / "llm.yaml"
+    try:
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        return any(
+            b.get("enabled", True) and b.get("type") != "vision_service"
+            for b in cfg.get("backends", {}).values()
+        )
+    except Exception:
+        return False
