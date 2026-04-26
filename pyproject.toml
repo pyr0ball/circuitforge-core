@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuitforge-core"
-version = "0.15.0"
+version = "0.17.0"
 description = "Shared scaffold for CircuitForge products (MIT)"
 requires-python = ">=3.11"
 dependencies = [
@@ -90,6 +90,17 @@ reranker-qwen3 = [
     "torch>=2.0",
     "transformers>=4.40",
     "accelerate>=0.27",
+]
+reranker-cross-encoder = [
+    "sentence-transformers>=3.0",
+]
+reranker-cohere = [
+    "cohere>=5.0",
+]
+reranker-service = [
+    "circuitforge-core[reranker-qwen3]",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
 ]
 dev = [
     "circuitforge-core[manage]",

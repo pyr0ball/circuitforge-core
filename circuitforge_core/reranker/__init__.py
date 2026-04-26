@@ -92,7 +92,21 @@ def make_reranker(
         return MockTextReranker()
 
     _model_id = model_id or os.environ.get("CF_RERANKER_MODEL", _DEFAULT_MODEL)
-    _backend = backend or os.environ.get("CF_RERANKER_BACKEND", "bge")
+    _backend = backend or os.environ.get("CF_RERANKER_BACKEND", "")
+
+    # Auto-route to cf-orch when CF_ORCH_URL is set and no explicit backend override.
+    # Cloud deployments set CF_ORCH_URL; local dev leaves it unset → local inference.
+    if not _backend:
+        orch_url = os.environ.get("CF_ORCH_URL", "")
+        if orch_url:
+            from circuitforge_core.reranker.adapters.remote import RemoteTextReranker
+            logger.info("[reranker] CF_ORCH_URL set — using remote cf-reranker via cf-orch")
+            return RemoteTextReranker.from_cf_orch(
+                orch_url=orch_url,
+                service="cf-reranker",
+                ttl_s=float(os.environ.get("CF_RERANKER_TTL", "3600")),
+            )
+        _backend = "bge"  # local default
 
     if _backend == "mock":
         return MockTextReranker()
@@ -101,10 +115,25 @@ def make_reranker(
         from circuitforge_core.reranker.adapters.bge import BGETextReranker
         return BGETextReranker(_model_id)
 
+    if _backend == "qwen3":
+        from circuitforge_core.reranker.adapters.qwen3 import Qwen3TextReranker
+        return Qwen3TextReranker(_model_id)
+
+    if _backend == "cross-encoder":
+        from circuitforge_core.reranker.adapters.cross_encoder import CrossEncoderTextReranker
+        return CrossEncoderTextReranker(_model_id)
+
+    if _backend == "cohere":
+        from circuitforge_core.reranker.adapters.cohere import CohereTextReranker
+        return CohereTextReranker(model=_model_id)
+
+    if _backend == "remote":
+        from circuitforge_core.reranker.adapters.remote import RemoteTextReranker
+        return RemoteTextReranker(_model_id)
+
     raise ValueError(
         f"Unknown reranker backend {_backend!r}. "
-        "Valid options: 'bge', 'mock'. "
-        "(Qwen3 support is coming in Phase 2.)"
+        "Valid options: 'bge', 'qwen3', 'cross-encoder', 'cohere', 'remote', 'mock'."
     )
 
 
