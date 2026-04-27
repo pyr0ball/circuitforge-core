@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Iterator
 
 import cv2
+import numpy as np
 
 
 class CameraCapture:
@@ -38,7 +39,7 @@ class CameraCapture:
     def is_open(self) -> bool:
         return self._cap.isOpened()
 
-    def frames(self) -> Iterator:
+    def frames(self) -> Iterator[np.ndarray]:
         """Yield BGR uint8 frames until camera fails or caller breaks."""
         while self._cap.isOpened():
             ok, frame = self._cap.read()
