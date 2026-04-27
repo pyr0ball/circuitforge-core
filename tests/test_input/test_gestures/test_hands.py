@@ -79,7 +79,13 @@ def test_handlandmarks_is_immutable(mock_mp):
     frame = np.zeros((480, 640, 3), dtype=np.uint8)
     result = detector.detect(frame)[0]
     with pytest.raises((AttributeError, TypeError)):
-        result.handedness = "Left"  # frozen dataclass must reject mutation
+        result.handedness = (
+            "Left"  # frozen dataclass must reject attribute reassignment
+        )
+    with pytest.raises(ValueError):
+        result.points[0] = np.array(
+            [1.0, 2.0, 3.0]
+        )  # writeable=False must reject in-place mutation
 
 
 @patch("circuitforge_core.input.gestures.hands.mp")

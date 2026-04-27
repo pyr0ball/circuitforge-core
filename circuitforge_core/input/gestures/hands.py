@@ -71,6 +71,7 @@ class HandsDetector:
         out: list[HandLandmarks] = []
         for lm, hand in zip(results.multi_hand_landmarks, results.multi_handedness):
             points = np.array([[p.x, p.y, p.z] for p in lm.landmark], dtype=np.float32)
+            points.flags.writeable = False  # enforce immutability of stored array
             out.append(
                 HandLandmarks(
                     points=points,
