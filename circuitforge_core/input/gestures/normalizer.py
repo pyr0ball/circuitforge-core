@@ -4,6 +4,7 @@ Landmark normalization for MediaPipe hand landmarks.
 Converts raw (21, 3) landmark array into a 63-element translation- and
 scale-invariant feature vector suitable for gesture classifiers.
 """
+
 import numpy as np
 
 
@@ -25,8 +26,8 @@ def normalize_hand(points: np.ndarray) -> np.ndarray:
         (63,) float32 feature vector.
     """
     pts = points.astype(np.float32).copy()
-    pts -= pts[0]                          # translate: wrist → origin
-    scale = float(np.linalg.norm(pts[9])) # wrist-to-middle-MCP distance
+    pts -= pts[0]  # translate: wrist → origin
+    scale = float(np.linalg.norm(pts[9]))  # wrist-to-middle-MCP distance
     if scale > 1e-6:
         pts /= scale
     return pts.flatten()
