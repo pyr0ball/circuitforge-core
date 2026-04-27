@@ -80,3 +80,21 @@ def test_handlandmarks_is_immutable(mock_mp):
     result = detector.detect(frame)[0]
     with pytest.raises((AttributeError, TypeError)):
         result.handedness = "Left"  # frozen dataclass must reject mutation
+
+
+@patch("circuitforge_core.input.gestures.hands.mp")
+def test_full_pipeline_hands_to_normalized_vector(mock_mp):
+    """Detect hand → normalize landmarks → get 63-element vector."""
+    from circuitforge_core.input.gestures.normalizer import normalize_hand
+
+    mock_mp.solutions.hands.Hands.return_value.process.return_value = (
+        _make_mock_results(1)
+    )
+    detector = HandsDetector()
+    frame = np.zeros((480, 640, 3), dtype=np.uint8)
+    hands = detector.detect(frame)
+    assert len(hands) == 1
+    vec = normalize_hand(hands[0].points)
+    assert vec.shape == (63,)
+    assert vec.dtype == np.float32
+    assert not np.any(np.isnan(vec))
