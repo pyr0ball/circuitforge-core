@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "circuitforge-core"
-version = "0.18.0"
+version = "0.19.0"
 description = "Shared scaffold for CircuitForge products (MIT)"
 requires-python = ">=3.11"
 dependencies = [
@@ -106,6 +106,14 @@ gestures-mediapipe = [
     "mediapipe>=0.10",
     "opencv-python>=4.8",
     "numpy>=1.24",
+]
+pdf = [
+    "pdfplumber>=0.11",
+    "pytesseract>=0.3",
+    "Pillow>=10.0",
+]
+vector = [
+    "sqlite-vec>=0.1",
 ]
 dev = [
     "circuitforge-core[manage]",
