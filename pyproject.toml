@@ -107,6 +107,14 @@ gestures-mediapipe = [
     "opencv-python>=4.8",
     "numpy>=1.24",
 ]
+pdf = [
+    "pdfplumber>=0.11",
+]
+pdf-ocr = [
+    "circuitforge-core[pdf]",
+    "pytesseract>=0.3",
+    "Pillow>=10.0",
+]
 dev = [
     "circuitforge-core[manage]",
     "pytest>=8.0",
