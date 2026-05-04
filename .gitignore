@@ -11,3 +11,4 @@ build/
 
 # cf-orch private profiles (commit on personal/heimdall branch only)
 circuitforge_core/resources/profiles/private/
+.worktrees/
