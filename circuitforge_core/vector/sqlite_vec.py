@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import struct
 from contextlib import contextmanager
@@ -21,6 +22,8 @@ import sqlite_vec
 from .base import VectorMatch, VectorStore
 
 logger = logging.getLogger(__name__)
+
+_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _serialize(vector: list[float]) -> bytes:
@@ -47,6 +50,10 @@ class LocalSQLiteVecStore(VectorStore):
         table: str = "vecs",
         dimensions: int = 768,
     ) -> None:
+        if not _SAFE_IDENTIFIER.match(table):
+            raise ValueError(
+                f"table must be a valid SQL identifier (letters, digits, underscores): {table!r}"
+            )
         self.db_path = str(db_path)
         self.table = table
         self.dimensions = dimensions
@@ -62,6 +69,9 @@ class LocalSQLiteVecStore(VectorStore):
         try:
             yield conn
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -125,15 +135,14 @@ class LocalSQLiteVecStore(VectorStore):
                 """,
                 [_serialize(vector), top_k],
             ).fetchall()
-
-        results = [
-            VectorMatch(
-                entry_id=r["entry_id"],
-                score=r["distance"],
-                metadata=json.loads(r["metadata"]),
-            )
-            for r in rows
-        ]
+            results = [
+                VectorMatch(
+                    entry_id=r["entry_id"],
+                    score=r["distance"],
+                    metadata=json.loads(r["metadata"]),
+                )
+                for r in rows
+            ]
 
         if filter_metadata:
             results = [

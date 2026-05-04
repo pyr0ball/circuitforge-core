@@ -29,9 +29,14 @@ def test_upsert_and_query_returns_match(store):
 
 def test_upsert_replaces_existing(store):
     store.upsert("chunk-1", _vec(0.1), {"page": 1})
-    store.upsert("chunk-1", _vec(0.2), {"page": 99})
-    results = store.query(_vec(0.2), top_k=5)
+    store.upsert("chunk-1", _vec(0.9), {"page": 99})
+    # Metadata check
+    results = store.query(_vec(0.9), top_k=5)
     assert results[0].metadata["page"] == 99
+    # Vector check: querying with new vector should score better than querying with old
+    old_results = store.query(_vec(0.1), top_k=5)
+    new_results = store.query(_vec(0.9), top_k=5)
+    assert new_results[0].score < old_results[0].score
 
 
 def test_query_respects_top_k(store):
