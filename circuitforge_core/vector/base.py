@@ -8,21 +8,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any
 
 
 @dataclass(frozen=True)
 class VectorMatch:
     """A single result from a vector similarity search."""
 
-    entry_id: str
+    id: str
     score: float  # lower is better (L2 / cosine distance)
-    metadata: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if isinstance(self.metadata, dict):
-            object.__setattr__(self, "metadata", MappingProxyType(self.metadata))
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class VectorStore(ABC):
