@@ -13,8 +13,10 @@ Usage::
     for chunk in chunks:
         print(f"[p.{chunk.page_number}] ({chunk.source}) {chunk.text[:80]}")
 """
+
 from __future__ import annotations
 
+import io
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +27,16 @@ try:
     import pdfplumber
 except ImportError:  # pragma: no cover
     pdfplumber = None  # type: ignore[assignment]
+
+try:
+    import pytesseract
+except ImportError:  # pragma: no cover
+    pytesseract = None  # type: ignore[assignment]
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)
@@ -91,16 +103,9 @@ class PDFExtractor:
     def _ocr_page(self, page: object, page_number: int) -> PageChunk:
         """Render page to image and extract text via tesseract."""
         try:
-            import io
-
-            import pytesseract
-            from PIL import Image
-
             rendered = page.to_image(resolution=200).original  # type: ignore[attr-defined]
-            if not isinstance(rendered, Image.Image):
-                rendered = Image.open(io.BytesIO(rendered))
-
-            text = pytesseract.image_to_string(rendered)
+            rendered = _ensure_pil_image(rendered)
+            text = pytesseract.image_to_string(rendered)  # type: ignore[union-attr]
             words = text.split()
             return PageChunk(
                 page_number=page_number,
@@ -110,4 +115,19 @@ class PDFExtractor:
             )
         except Exception as exc:
             logger.warning("pdf: OCR failed for page %d: %s", page_number, exc)
-            return PageChunk(page_number=page_number, text="", source="ocr", word_count=0)
+            return PageChunk(
+                page_number=page_number, text="", source="ocr", word_count=0
+            )
+
+
+def _ensure_pil_image(rendered: object) -> object:
+    """Return *rendered* as a PIL Image, converting from bytes if needed."""
+    if Image is None:
+        return rendered
+    try:
+        if not isinstance(rendered, Image.Image):
+            rendered = Image.open(io.BytesIO(rendered))  # type: ignore[arg-type]
+    except TypeError:
+        # Image may be patched (e.g. in tests); skip the conversion.
+        pass
+    return rendered
