@@ -25,7 +25,7 @@ class _ConcreteStore(VectorStore):
         filter_metadata: dict | None = None,
     ) -> list[VectorMatch]:
         results = [
-            VectorMatch(id=k, score=0.0, metadata=v[1])
+            VectorMatch(entry_id=k, score=0.0, metadata=v[1])
             for k, v in self._data.items()
         ]
         if filter_metadata:
@@ -51,13 +51,13 @@ class _ConcreteStore(VectorStore):
 
 
 def test_vector_match_is_frozen():
-    match = VectorMatch(id="a", score=0.1, metadata={})
+    match = VectorMatch(entry_id="a", score=0.1, metadata={})
     with pytest.raises(FrozenInstanceError):
         match.score = 0.5  # type: ignore[misc]
 
 
 def test_vector_match_metadata_is_dict():
-    match = VectorMatch(id="a", score=0.1, metadata={"k": "v"})
+    match = VectorMatch(entry_id="a", score=0.1, metadata={"k": "v"})
     assert isinstance(match.metadata, dict)
     assert match.metadata["k"] == "v"
 
@@ -67,7 +67,7 @@ def test_upsert_and_query():
     store.upsert("chunk-1", [0.1, 0.2], {"doc_id": "book-a", "page": 1})
     results = store.query([0.1, 0.2])
     assert len(results) == 1
-    assert results[0].id == "chunk-1"
+    assert results[0].entry_id == "chunk-1"
     assert results[0].metadata["page"] == 1
 
 
@@ -77,7 +77,7 @@ def test_query_filter_metadata():
     store.upsert("c2", [0.2], {"doc_id": "book-b"})
     results = store.query([0.1], filter_metadata={"doc_id": "book-a"})
     assert len(results) == 1
-    assert results[0].id == "c1"
+    assert results[0].entry_id == "c1"
 
 
 def test_delete():

@@ -15,7 +15,7 @@ from typing import Any
 class VectorMatch:
     """A single result from a vector similarity search."""
 
-    id: str
+    entry_id: str
     score: float  # lower is better (L2 / cosine distance)
     metadata: dict[str, Any] = field(default_factory=dict)
 
