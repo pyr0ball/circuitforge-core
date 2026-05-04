@@ -189,13 +189,16 @@ def test_embed_skips_non_openai_compat_backends():
     mock_client.embeddings.create.return_value = MagicMock(
         data=[MagicMock(embedding=[0.1])]
     )
+    mock_openai = MagicMock(return_value=mock_client)
     with (
         patch.object(router, "_is_reachable", return_value=True),
-        patch("circuitforge_core.llm.router.OpenAI", return_value=mock_client),
+        patch("circuitforge_core.llm.router.OpenAI", mock_openai),
     ):
         result = router.embed(["hello"])
 
     assert result == [[0.1]]
+    # Only ollama reached the OpenAI constructor; anthropic was skipped by type check
+    mock_openai.assert_called_once()
 
 
 def test_embed_raises_when_all_backends_exhausted():

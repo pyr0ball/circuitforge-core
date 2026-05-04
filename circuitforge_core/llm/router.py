@@ -398,6 +398,11 @@ class LLMRouter:
         Raises:
             RuntimeError: If all eligible backends are exhausted.
         """
+        if os.environ.get("DEMO_MODE", "").lower() in ("1", "true", "yes"):
+            raise RuntimeError(
+                "AI inference is disabled in the public demo. "
+                "Run your own instance to use AI features."
+            )
         order = (
             fallback_order
             if fallback_order is not None
