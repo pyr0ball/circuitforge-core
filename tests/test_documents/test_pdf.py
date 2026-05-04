@@ -98,3 +98,10 @@ def test_chunk_pages_ocr_failure_returns_empty_chunk():
     assert chunks[0].text == ""
     assert chunks[0].source == "ocr"
     assert chunks[0].word_count == 0
+
+
+def test_chunk_pages_empty_pdf_returns_empty_list():
+    with patch("circuitforge_core.documents.pdf.pdfplumber") as mock_pl:
+        mock_pl.open.return_value = _mock_pdf([])
+        chunks = PDFExtractor().chunk_pages("/fake/empty.pdf")
+    assert chunks == []
