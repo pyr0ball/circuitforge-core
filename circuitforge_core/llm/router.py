@@ -43,6 +43,7 @@ When llm.yaml is absent, the router builds a minimal config from environment
 variables: ANTHROPIC_API_KEY, OPENAI_API_KEY / OPENAI_BASE_URL, OLLAMA_HOST.
 Ollama on localhost:11434 is always included as the lowest-cost local fallback.
 """
+
 import logging
 import os
 import yaml
@@ -70,7 +71,8 @@ class LLMRouter:
                 )
             logger.info(
                 "[LLMRouter] No llm.yaml found — using env-var auto-config "
-                "(backends: %s)", ", ".join(env_config["fallback_order"])
+                "(backends: %s)",
+                ", ".join(env_config["fallback_order"]),
             )
             self.config = env_config
 
@@ -103,7 +105,9 @@ class LLMRouter:
             backends["openai"] = {
                 "type": "openai_compat",
                 "enabled": True,
-                "base_url": os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                "base_url": os.environ.get(
+                    "OPENAI_BASE_URL", "https://api.openai.com/v1"
+                ),
                 "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
                 "api_key": os.environ.get("OPENAI_API_KEY"),
                 "supports_images": True,
@@ -156,6 +160,7 @@ class LLMRouter:
         Caller MUST call ctx.__exit__(None, None, None) in a finally block.
         """
         import os
+
         orch_cfg = backend.get("cf_orch")
         if not orch_cfg:
             return None
@@ -164,6 +169,7 @@ class LLMRouter:
             return None
         try:
             from circuitforge_orch.client import CFOrchClient
+
             client = CFOrchClient(orch_url)
             service = orch_cfg.get("service", "vllm")
             candidates = orch_cfg.get("model_candidates", [])
@@ -181,14 +187,21 @@ class LLMRouter:
             alloc = ctx.__enter__()
             return (ctx, alloc)
         except Exception as exc:
-            logger.warning("[LLMRouter] cf_orch allocation failed, using base_url directly: %s", exc)
+            logger.warning(
+                "[LLMRouter] cf_orch allocation failed, using base_url directly: %s",
+                exc,
+            )
             return None
 
-    def complete(self, prompt: str, system: str | None = None,
-                 model_override: str | None = None,
-                 fallback_order: list[str] | None = None,
-                 images: list[str] | None = None,
-                 max_tokens: int | None = None) -> str:
+    def complete(
+        self,
+        prompt: str,
+        system: str | None = None,
+        model_override: str | None = None,
+        fallback_order: list[str] | None = None,
+        images: list[str] | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
         """
         Generate a completion. Tries each backend in fallback_order.
 
@@ -206,7 +219,11 @@ class LLMRouter:
                 "AI inference is disabled in the public demo. "
                 "Run your own instance to use AI features."
             )
-        order = fallback_order if fallback_order is not None else self.config["fallback_order"]
+        order = (
+            fallback_order
+            if fallback_order is not None
+            else self.config["fallback_order"]
+        )
         for name in order:
             backend = self.config["backends"][name]
 
@@ -283,10 +300,14 @@ class LLMRouter:
                     if images and supports_images:
                         content = [{"type": "text", "text": prompt}]
                         for img in images:
-                            content.append({
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{img}"},
-                            })
+                            content.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{img}"
+                                    },
+                                }
+                            )
                         messages.append({"role": "user", "content": content})
                     else:
                         messages.append({"role": "user", "content": prompt})
@@ -311,18 +332,27 @@ class LLMRouter:
             elif backend["type"] == "anthropic":
                 api_key = os.environ.get(backend["api_key_env"], "")
                 if not api_key:
-                    print(f"[LLMRouter] {name}: {backend['api_key_env']} not set, skipping")
+                    print(
+                        f"[LLMRouter] {name}: {backend['api_key_env']} not set, skipping"
+                    )
                     continue
                 try:
                     import anthropic as _anthropic
+
                     client = _anthropic.Anthropic(api_key=api_key)
                     if images and supports_images:
                         content = []
                         for img in images:
-                            content.append({
-                                "type": "image",
-                                "source": {"type": "base64", "media_type": "image/png", "data": img},
-                            })
+                            content.append(
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/png",
+                                        "data": img,
+                                    },
+                                }
+                            )
                         content.append({"type": "text", "text": prompt})
                     else:
                         content = prompt
@@ -341,6 +371,76 @@ class LLMRouter:
                     continue
 
         raise RuntimeError("All LLM backends exhausted")
+
+    def embed(
+        self,
+        texts: list[str],
+        model_override: str | None = None,
+        fallback_order: list[str] | None = None,
+    ) -> list[list[float]]:
+        """
+        Generate embeddings for a list of texts.
+
+        Only openai_compat backends are tried — Ollama and vLLM expose
+        /v1/embeddings; anthropic and vision_service do not.
+
+        Uses ``embedding_model`` from backend config when present;
+        falls back to ``model`` (the chat model) otherwise.
+
+        Args:
+            texts:          Texts to embed (batched in a single API call).
+            model_override: Override the embedding model for this call.
+            fallback_order: Override the backend fallback order for this call.
+
+        Returns:
+            List of float vectors, one per input text, in input order.
+
+        Raises:
+            RuntimeError: If all eligible backends are exhausted.
+        """
+        order = (
+            fallback_order
+            if fallback_order is not None
+            else self.config["fallback_order"]
+        )
+        for name in order:
+            backend = self.config["backends"][name]
+            if not backend.get("enabled", True):
+                continue
+            if backend["type"] != "openai_compat":
+                continue
+
+            orch_ctx = orch_alloc = None
+            orch_result = self._try_cf_orch_alloc(backend)
+            if orch_result is not None:
+                orch_ctx, orch_alloc = orch_result
+                backend = {**backend, "base_url": orch_alloc.url + "/v1"}
+            elif not self._is_reachable(backend["base_url"]):
+                print(f"[LLMRouter] {name}: unreachable, skipping")
+                continue
+
+            try:
+                client = OpenAI(
+                    base_url=backend["base_url"],
+                    api_key=backend.get("api_key") or "any",
+                )
+                model = model_override or backend.get(
+                    "embedding_model", backend["model"]
+                )
+                resp = client.embeddings.create(model=model, input=texts)
+                print(f"[LLMRouter] embed: used backend {name} ({model})")
+                return [item.embedding for item in resp.data]
+            except Exception as e:
+                print(f"[LLMRouter] {name}: embed error — {e}, trying next")
+                continue
+            finally:
+                if orch_ctx is not None:
+                    try:
+                        orch_ctx.__exit__(None, None, None)
+                    except Exception:
+                        pass
+
+        raise RuntimeError("All LLM backends exhausted for embed()")
 
 
 # Module-level singleton for convenience
