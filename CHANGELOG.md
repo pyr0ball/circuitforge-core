@@ -6,6 +6,18 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.20.0] — 2026-05-05
+
+### Fixed / Enhanced
+
+**`circuitforge_core.llm.LLMRouter`** — Pagepiper-driven improvements (closes #59, #60)
+
+- **#59 — dict init** (`LLMRouter(config_path: Path | dict)`): `__init__` now accepts an inline config dict in addition to a `Path`. Ingest scripts that construct Ollama URLs from product-specific env vars (e.g. `PAGEPIPER_OLLAMA_URL`) can pass the dict directly without writing a temp file. Passing a dict previously raised `AttributeError: 'dict' object has no attribute 'exists'`. Tests: `test_init_accepts_inline_dict`, `test_init_dict_is_used_directly`.
+
+- **#60 — Ollama preflight** (`_check_ollama_model_pulled()`): Before the first `embed()` call on an Ollama backend, `GET /api/tags` is checked to verify the configured embedding model is pulled. If it is not, a `RuntimeError` with an actionable `ollama pull <model>` hint is raised immediately — replacing the opaque `All LLM backends exhausted for embed()` error. Results are cached per base URL for the router's lifetime (one HTTP call, not one per `embed()` invocation). Non-Ollama backends (vLLM, etc.) don't expose `/api/tags` — a non-200 response causes the check to be silently skipped. Tests: `test_embed_raises_actionable_error_when_model_not_pulled`, `test_embed_proceeds_when_model_is_pulled`, `test_embed_skips_preflight_when_tags_endpoint_unavailable`, `test_ollama_tags_cache_is_hit_only_once`.
+
+---
+
 ## [0.17.0] — 2026-04-27
 
 ### Added

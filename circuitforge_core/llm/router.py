@@ -57,8 +57,11 @@ CONFIG_PATH = Path.home() / ".config" / "circuitforge" / "llm.yaml"
 
 
 class LLMRouter:
-    def __init__(self, config_path: Path = CONFIG_PATH):
-        if config_path.exists():
+    def __init__(self, config_path: Path | dict = CONFIG_PATH):
+        self._ollama_tags_cache: dict[str, set[str]] = {}
+        if isinstance(config_path, dict):
+            self.config = config_path
+        elif config_path.exists():
             with open(config_path) as f:
                 self.config = yaml.safe_load(f)
         else:
@@ -145,6 +148,37 @@ class LLMRouter:
         except Exception:
             return False
 
+    def _check_ollama_model_pulled(self, base_url: str, model: str) -> None:
+        """Raise RuntimeError with actionable message if model is not pulled in Ollama.
+
+        Silently skips the check if the /api/tags endpoint is unavailable (e.g. vLLM).
+        Results are cached per base_url for the lifetime of this router instance.
+        """
+        tags_url = base_url.rstrip("/").removesuffix("/v1") + "/api/tags"
+        if not hasattr(self, "_ollama_tags_cache"):
+            self._ollama_tags_cache = {}
+        if base_url not in self._ollama_tags_cache:
+            try:
+                resp = requests.get(tags_url, timeout=3)
+                if resp.status_code != 200:
+                    return
+                pulled = {
+                    m["name"].split(":")[0]
+                    for m in resp.json().get("models", [])
+                }
+                self._ollama_tags_cache[base_url] = pulled
+            except Exception:
+                return  # can't verify — let the actual embed call fail naturally
+        pulled_models = self._ollama_tags_cache.get(base_url)
+        if pulled_models is None:
+            return
+        model_base = model.split(":")[0]
+        if model_base not in pulled_models:
+            raise RuntimeError(
+                f'Ollama embedding model "{model}" is not pulled.\n'
+                f"Fix: ollama pull {model}"
+            )
+
     def _resolve_model(self, client: OpenAI, model: str) -> str:
         """Resolve __auto__ to the first model served by vLLM."""
         if model != "__auto__":
@@ -176,13 +210,14 @@ class LLMRouter:
             ttl_s = float(orch_cfg.get("ttl_s", 3600.0))
             # CF_APP_NAME identifies the calling product (kiwi, peregrine, etc.)
             # in coordinator analytics — set in each product's .env.
-            pipeline = os.environ.get("CF_APP_NAME") or None
+            cf_app = os.environ.get("CF_APP_NAME") or None
+            caller = f"{cf_app}.llm-router" if cf_app else "llm-router"
             ctx = client.allocate(
                 service,
                 model_candidates=candidates,
                 ttl_s=ttl_s,
-                caller="llm-router",
-                pipeline=pipeline,
+                caller=caller,
+                pipeline=cf_app,
             )
             alloc = ctx.__enter__()
             return (ctx, alloc)
@@ -424,14 +459,17 @@ class LLMRouter:
                 print(f"[LLMRouter] {name}: unreachable, skipping")
                 continue
 
+            embed_model = model_override or backend.get(
+                "embedding_model", backend["model"]
+            )
+            self._check_ollama_model_pulled(backend["base_url"], embed_model)
+
             try:
                 client = OpenAI(
                     base_url=backend["base_url"],
                     api_key=backend.get("api_key") or "any",
                 )
-                model = model_override or backend.get(
-                    "embedding_model", backend["model"]
-                )
+                model = embed_model
                 resp = client.embeddings.create(model=model, input=texts)
                 print(f"[LLMRouter] embed: used backend {name} ({model})")
                 return [item.embedding for item in resp.data]
