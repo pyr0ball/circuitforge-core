@@ -66,6 +66,9 @@ class CommunityPost:
     protein_pct: float | None
     moisture_pct: float | None
 
+    # Variation link: slug of the parent post this is explicitly a variation of
+    similar_to_ref: str | None = None
+
     def __post_init__(self) -> None:
         # Coerce list fields to tuples (frozen dataclass: use object.__setattr__)
         for key in ("slots", "dietary_tags", "allergen_flags", "flavor_molecules"):

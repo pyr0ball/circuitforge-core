@@ -46,6 +46,7 @@ def _row_to_post(row: dict) -> CommunityPost:
         fat_pct=row.get("fat_pct"),
         protein_pct=row.get("protein_pct"),
         moisture_pct=row.get("moisture_pct"),
+        similar_to_ref=row.get("similar_to_ref"),
     )
 
 
@@ -137,6 +138,61 @@ class SharedStore:
         finally:
             self._db.putconn(conn)
 
+    def search_similar_posts(
+        self,
+        title: str,
+        recipe_id: int | None = None,
+        post_type: str | None = None,
+        limit: int = 8,
+    ) -> list[CommunityPost]:
+        """Return posts similar to the given title or with the same recipe_id.
+
+        Used by the dedup check before a new post is submitted. Matches on:
+        - exact recipe_id (strongest signal)
+        - case-insensitive title substring match
+
+        Results are ordered: recipe_id matches first, then by published desc.
+        """
+        conn = self._db.getconn()
+        try:
+            conditions: list[str] = []
+            params: list = []
+
+            title_condition = "lower(title) LIKE lower(%s)"
+            title_param = f"%{title.lower()[:80]}%"
+
+            if recipe_id is not None:
+                conditions.append(f"(recipe_id = %s OR {title_condition})")
+                params.extend([recipe_id, title_param])
+            else:
+                conditions.append(title_condition)
+                params.append(title_param)
+
+            if post_type:
+                conditions.append("post_type = %s")
+                params.append(post_type)
+
+            where = "WHERE " + " AND ".join(conditions)
+            params.append(limit)
+
+            order_clause = (
+                "ORDER BY (recipe_id = %s) DESC, published DESC"
+                if recipe_id is not None
+                else "ORDER BY published DESC"
+            )
+            if recipe_id is not None:
+                params.insert(-1, recipe_id)
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT * FROM community_posts {where} {order_clause} LIMIT %s",
+                    params,
+                )
+                rows = cur.fetchall()
+                return [_row_to_post(_cursor_to_dict(cur, r)) for r in rows]
+        finally:
+            self._db.putconn(conn)
+
     # ------------------------------------------------------------------
     # Writes
     # ------------------------------------------------------------------
@@ -156,13 +212,14 @@ class SharedStore:
                         seasoning_score, richness_score, brightness_score,
                         depth_score, aroma_score, structure_score, texture_profile,
                         dietary_tags, allergen_flags, flavor_molecules,
-                        fat_pct, protein_pct, moisture_pct, source_product
+                        fat_pct, protein_pct, moisture_pct, source_product,
+                        similar_to_ref
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, %s, %s, %s, %s,
                         %s, %s, %s, %s, %s, %s, %s,
                         %s::jsonb, %s::jsonb, %s::jsonb,
-                        %s, %s, %s, %s
+                        %s, %s, %s, %s, %s
                     )
                     """,
                     (
@@ -178,6 +235,7 @@ class SharedStore:
                         json.dumps(list(post.flavor_molecules)),
                         post.fat_pct, post.protein_pct, post.moisture_pct,
                         self._source_product,
+                        post.similar_to_ref,
                     ),
                 )
                 conn.commit()
